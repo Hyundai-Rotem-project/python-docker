@@ -20,11 +20,15 @@ sudo apt update
 sudo apt install docker.io docker-compose
 ```
 ## 3. 도커 환경 실행
-1. 도커 이미지 빌드
+1. 도커 파일이 있는 디렉토리로 이동
+```bash
+cd repository
+```
+2. 도커 이미지 빌드
 ```bash
 docker-compose build
 ```
-2. 도커 컨테이너 실행
+3. 도커 컨테이너 실행
 ```bash
 docker-compose up
 ```
