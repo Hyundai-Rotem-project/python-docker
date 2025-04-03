@@ -13,8 +13,8 @@ git clone https://github.com/yourusername/your-repository.git
 cd your-repository
 ```
 ## 2. 도커 설치
-윈도우 : Docker Desktop 다운로드 및 설치.
-리눅스 :
+* 윈도우 : Docker Desktop 다운로드 및 설치.
+* 리눅스 : 아래 명령어 입력
 ```bash
 sudo apt update
 sudo apt install docker.io docker-compose
