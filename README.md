@@ -7,7 +7,6 @@ docker for CI/CD
 
 ## 1. 프로젝트 클론
 먼저, 이 프로젝트를 클론하세요:
-
 ```bash
 git clone https://github.com/yourusername/your-repository.git
 cd your-repository
@@ -18,6 +17,10 @@ cd your-repository
 ```bash
 sudo apt update
 sudo apt install docker.io docker-compose
+```
+* 도커 버전 확인 : 28.0.1
+```bash
+docker --version
 ```
 ## 3. 도커 환경 실행
 1. 도커 파일이 있는 디렉토리로 이동
