@@ -25,7 +25,7 @@ docker --version
 ## 3. 도커 환경 실행
 1. 도커 파일이 있는 디렉토리로 이동
 ```bash
-cd repository
+cd python-docker
 ```
 2. 도커 이미지 빌드
 ```bash
