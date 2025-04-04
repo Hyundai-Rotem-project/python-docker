@@ -8,4 +8,4 @@ services:
     volumes:
       - .:/app # 로컬 코드가 도커 컨테이너 내의 /app 디렉토리와 연결됨
     working_dir: /app
-    command: python app.py # 애플리케이션 실행 명령
+    command: python test.py # 애플리케이션 실행 명령
