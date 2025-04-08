@@ -1,10 +1,16 @@
 # 1. 파이썬 이미지 기반으로 시작
-FROM python:3.12.7-slim
+FROM nvidia/cuda:12.2.0-base-ubuntu22.04
 
 # 2. 패키지 목록을 업데이트하고 Git을 설치
 RUN apt-get update && \
-    apt-get install -y git && \
-    apt-get clean
+    apt-get install -y python3 python3-pip git && \
+    rm -f /usr/bin/python && \
+    ln -s /usr/bin/python3 /usr/bin/python && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --upgrade pip
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+RUN pip3 install ultralytics
 
 # 3. 작업 디렉토리 설정
 WORKDIR /app
