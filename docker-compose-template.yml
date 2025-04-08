@@ -1,0 +1,15 @@
+version: "3"
+services:
+  python-env-test:
+    build: .
+    container_name: python-env-test
+    ports:
+      - "5010:5000"
+    volumes:
+      - /mnt/c/Users/user/python-docker:/app
+      - /mnt/c/Users/user/shared_data:/data
+    working_dir: /app
+    command: tail -f /dev/null
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
