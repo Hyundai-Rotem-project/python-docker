@@ -4,12 +4,12 @@ services:
     build: .
     container_name: python-env-test
     ports:
-      - "5010:5000"
+      - "5020:5000"
     volumes:
-      - /mnt/c/Users/user/python-docker:/app
+      - /home/hara/workspace/python-docker/Aug_dev:/app
       - /mnt/c/Users/user/shared_data:/data
     working_dir: /app
-    command: tail -f /dev/null
+    command: python aug1.py
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
