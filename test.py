@@ -28,11 +28,19 @@ def aug_test():
         label_dir=label_dir,
         output_image_dir=output_image_dir,
         output_label_dir=output_label_dir,
-        transform=Aug.transform_synth,
-        # transform=Aug.transform,
+        transform=Aug.transform,
         output_num=1, # 한 이미지로 몇장의 증강 데이터를 만들지 결정
     )
     aug.run()
+    
+    synth = Aug.ObjectSynthesizer(
+        image_dir=image_dir,
+        label_dir=label_dir,
+        output_image_dir=output_image_dir,
+        output_label_dir=output_label_dir,
+        obj_num=3, 
+    )
+    synth.run()
 
 if __name__ == '__main__':
     aug_test()
