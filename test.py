@@ -1,6 +1,5 @@
 from flask import Flask
 import os
-import model.SyntheticAug as SynAug
 import model.Augmentator as Aug
 app = Flask(__name__)
 
@@ -29,10 +28,12 @@ def aug_test():
         label_dir=label_dir,
         output_image_dir=output_image_dir,
         output_label_dir=output_label_dir,
-        transform=SynAug.transform,
+        transform=Aug.transform_synth,
+        # transform=Aug.transform,
         output_num=1, # 한 이미지로 몇장의 증강 데이터를 만들지 결정
     )
     aug.run()
 
 if __name__ == '__main__':
+    aug_test()
     app.run(debug=True, host='0.0.0.0')
