@@ -1,13 +1,86 @@
-# Byte-compiled / optimized / DLL files
+# Python 관련
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# 가상 환경
+venv/
+ENV/
+env/
+.env
+.venv
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDE 관련
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# YOLOv8 학습 결과물
+runs/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.trt
+*.tflite
+*.pb
+*.mlmodel
+*.mlpackage
+*.mlc
+*.mlir
+#개인 컨테이너 설정 파일
+docker-compose.yml
+
+# 임시 라벨 및 캐시
+test_data/train/temp_labels/
+*.txt
+test_data/train/
+*.cache
 
 # C extensions
 *.so
 
 # Distribution / packaging
-.Python
 build/
 develop-eggs/
 dist/
@@ -75,9 +148,6 @@ docs/_build/
 .pybuilder/
 target/
 
-# Jupyter Notebook
-.ipynb_checkpoints
-
 # IPython
 profile_default/
 ipython_config.py
@@ -126,15 +196,6 @@ celerybeat.pid
 
 # SageMath parsed files
 *.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
 
 # Spyder project settings
 .spyderproject

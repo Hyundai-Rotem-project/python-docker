@@ -1,9 +1,10 @@
-train: ../train/images
-val: ../valid/images
-test: ../test/images
+path: /app/test_data  # 데이터셋 루트 경로
+train: /app/test_data/train/images # 학습 이미지 경로
+val: /app/test_data/train/images  # 테스트를 위해 같은 이미지 사용
 
-nc: 5
-names: ['car', 'person', 'rock', 'tree', 'turret']
+# 클래스 정의
+nc: 5  # 클래스 개수
+names: ['car', 'person', 'rock', 'tree', 'turret']  # 클래스 이름
 
 roboflow:
   workspace: tanktest
@@ -11,3 +12,4 @@ roboflow:
   version: 1
   license: CC BY 4.0
   url: https://universe.roboflow.com/tanktest/tank_simulator_dataset_2/dataset/1
+labels: /app/test_data/train/temp_labels

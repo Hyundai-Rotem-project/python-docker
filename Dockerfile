@@ -1,5 +1,5 @@
 # 1. 베이스 이미지
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
 
 # 2. 시스템 패키지 설치
 RUN apt-get update && \
