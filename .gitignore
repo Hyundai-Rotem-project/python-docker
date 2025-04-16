@@ -172,3 +172,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# 특정 폴더 제외	
+/dataset/
+/etc_data/
+/Image-Detection-1/
+/Image-Detection-2/
+/syn/
+*.pt
