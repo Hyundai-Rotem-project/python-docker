@@ -1,0 +1,12 @@
+names:
+- green_car
+nc: 1
+roboflow:
+  license: CC BY 4.0
+  project: image-detection-dxhgd
+  url: https://universe.roboflow.com/hundairotemtraining/image-detection-dxhgd/dataset/1
+  version: 1
+  workspace: hundairotemtraining
+test: ../test/images
+train: ../train/images
+val: ../valid/images

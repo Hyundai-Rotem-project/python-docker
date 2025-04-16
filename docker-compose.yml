@@ -1,19 +1,15 @@
-version: "3.8"
+version: "3"
 services:
-  python-env:
+  python-env-test:
     build: .
-    container_name: python-env-container
+    container_name: python-env-test
     ports:
-      - "5000:5000" # 애플리케이션 포트 5000을 외부 포트 5000에 연결
+      - "5020:5000"
     volumes:
-      - .:/app # 로컬 코드가 도커 컨테이너 내의 /app 디렉토리와 연결됨
+      - /home/hara/workspace/python-docker/Aug_dev:/app
+      - /mnt/c/Users/user/shared_data:/data
     working_dir: /app
-    command: python test.py # 애플리케이션 실행 명령
+    command: python app.py
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]

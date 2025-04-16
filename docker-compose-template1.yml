@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  python-env:
+    build: .
+    container_name: python-env-container
+    ports:
+      - "5000:5000" # 애플리케이션 포트 5000을 외부 포트 5000에 연결
+    volumes:
+      - .:/app # 로컬 코드가 도커 컨테이너 내의 /app 디렉토리와 연결됨
+    working_dir: /app
+    command: python test.py # 애플리케이션 실행 명령
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
