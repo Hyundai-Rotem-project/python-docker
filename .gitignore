@@ -68,8 +68,7 @@ runs/
 *.mlpackage
 *.mlc
 *.mlir
-#개인 컨테이너 설정 파일
-docker-compose.yml
+
 
 # 임시 라벨 및 캐시
 test_data/train/temp_labels/
