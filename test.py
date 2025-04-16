@@ -1,6 +1,6 @@
 from flask import Flask
 import os
-import model.Augmentator as Aug
+import server.train.augment as Aug
 app = Flask(__name__)
 
 @app.route('/')
