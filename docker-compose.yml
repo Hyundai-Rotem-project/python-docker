@@ -2,14 +2,14 @@ version: "3"
 services:
   python-env-test:
     build: .
-    container_name: python-env-test
+    container_name: python-env-user1 # 컨테이너 이름
     ports:
-      - "5020:5000"
+      - "5050:5000" # 포트 매핑(호스트:컨테이너, 호스트 포트는 중복x)
     volumes:
-      - /home/hara/workspace/python-docker/Aug_dev:/app
-      - /mnt/c/Users/user/shared_data:/data
-    working_dir: /app
-    command: python app.py
-    runtime: nvidia
+      - /home/sc/workspace/python-docker:/app # 개인 작업 디렉토리 매핑
+      - /mnt/c/Users/user/shared_data:/data # 공유 데이터 매핑
+    working_dir: /app # 작업 디렉토리
+    command: tail -f /dev/null # 컨테이너 실행 시 실행할 명령어
+    runtime: nvidia # 런타임
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
