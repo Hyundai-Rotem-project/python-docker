@@ -1,40 +1,46 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
+from flask_socketio import SocketIO
 import os
 import torch
 from ultralytics import YOLO
+import time
 
-# Initialize Flask server
 app = Flask(__name__)
-
-# Load YOLO model
 model = YOLO('yolov8n.pt')
+socketio = SocketIO(app)
 
-# Global variables for tank commands
-# Movement commands
-move_command = ["W", "W", "W", "D", "D", "D", "A", "A", "S", "S", "STOP"]
-# Action commands
-action_command = ["Q", "Q", "Q", "Q", "E", "E", "E", "E", "F", "F", "R", "R", "R", "R", "FIRE"]
+# Move commands with weights (11+ variations)
+move_command = [
+]
+
+# Action commands with weights (15+ variations)
+action_command = [
+]
+
+@app.route('/dashboard')
+def dashboard():
+    return render_template('dashboard.html')
 
 
 @app.route('/detect', methods=['POST'])
 def detect():
     """Receives an image from the simulator, performs object detection, and returns filtered results."""
+    # 1. 이미지 받기 및 저장
     image = request.files.get('image')
-
     if not image:
         return jsonify({"error": "No image received"}), 400
 
     image_path = 'temp_image.jpg'
-    image.save(image_path)  # Save temporary image
+    image.save(image_path)
 
-    # Perform detection
+    # 2. YOLO 모델 처리
     results = model(image_path)
-    detections = results[0].boxes.data.cpu().numpy()  # Extract bounding boxes
+    detections = results[0].boxes.data.cpu().numpy()
 
-    # Filter only specific object classes
+
+    # 3. 결과 필터링 및 변환
     target_classes = {0: "person", 2: "car", 7: "truck", 15: "rock"}
     filtered_results = []
-
     for box in detections:
         class_id = int(box[5])
         if class_id in target_classes:
@@ -44,112 +50,152 @@ def detect():
                 'confidence': float(box[4])
             })
 
-    return jsonify(filtered_results)
-
+    response = jsonify(filtered_results)
+    return response
 
 @app.route('/info', methods=['POST'])
 def info():
-    """Receives general data from the simulator and prints it for debugging."""
     data = request.get_json(force=True)
-
     if not data:
         return jsonify({"error": "No JSON received"}), 400
 
-    app.logger.info("Received /info data: %s", data)
-    print("Received /info data:", data)
+    print("📨 /info data received:", data)
 
-    return jsonify({"status": "success", "message": "Data received"}), 200
-
+    # Auto-pause after 15 seconds
+    #if data.get("time", 0) > 15:
+    #    return jsonify({"status": "success", "control": "pause"})
+    # Auto-reset after 15 seconds
+    #if data.get("time", 0) > 15:
+    #    return jsonify({"stsaatus": "success", "control": "reset"})
+    return jsonify({"status": "success", "control": ""})
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
-    """Updates the tank's current position in the simulator."""
     data = request.get_json()
-
     if not data or "position" not in data:
         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
 
     try:
         x, y, z = map(float, data["position"].split(","))
-        current_position = (int(x), int(z))  # Ignore height (y)
-        print(f"Updated Position: {current_position}")
+        current_position = (int(x), int(z))
+        print(f"📍 Position updated: {current_position}")
         return jsonify({"status": "OK", "current_position": current_position})
     except Exception as e:
         return jsonify({"status": "ERROR", "message": str(e)}), 400
 
-
 @app.route('/get_move', methods=['GET'])
 def get_move():
-    """Provides the next movement command to the simulator."""
     global move_command
-
     if move_command:
         command = move_command.pop(0)
-        print(f"Sent Move Command: {command}")
-        return jsonify({"move": command})
+        print(f"🚗 Move Command: {command}")
+        return jsonify(command)
     else:
-        return jsonify({"move": "STOP"})
-
+        return jsonify({"move": "STOP", "weight": 1.0})
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
-    """Provides the next turret action command to the simulator."""
     global action_command
-
     if action_command:
         command = action_command.pop(0)
-        print(f"Sent Action Command: {command}")
-        return jsonify({"turret": command})
+        print(f"🔫 Action Command: {command}")
+        return jsonify(command)
     else:
-        return jsonify({"turret": " "})
-
+        return jsonify({"turret": "", "weight": 0.0})
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
-    """Receives bullet collision data from the simulator and logs it."""
     data = request.get_json()
-
     if not data:
         return jsonify({"status": "ERROR", "message": "Invalid request data"}), 400
 
-    print(f"Bullet Impact at X={data.get('x')}, Y={data.get('y')}, Z={data.get('z')}, Target={data.get('hit')}")
+    impact_info = {
+        'x': data.get('x'),
+        'y': data.get('y'),
+        'z': data.get('z'),
+        'target': data.get('hit'),  # 'terrain' 또는 다른 타겟 정보
+        'timestamp': time.strftime('%H:%M:%S')
+    }
+    
+    print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
+    
+    socketio.emit('bullet_impact', impact_info)
+    
     return jsonify({"status": "OK", "message": "Bullet impact data received"})
-
 
 @app.route('/set_destination', methods=['POST'])
 def set_destination():
-    """Receives a destination from the simulator and simply logs it."""
     data = request.get_json()
-
     if not data or "destination" not in data:
         return jsonify({"status": "ERROR", "message": "Missing destination data"}), 400
 
     try:
-        x_dest, y_dest, z_dest = map(float, data["destination"].split(","))
-        print(f"Received destination: x={x_dest}, y={y_dest}, z={z_dest}")
-
-        return jsonify({
-            "status": "OK",
-            "destination": {
-                "x": x_dest,
-                "y": y_dest,
-                "z": z_dest
-            }
-        })
+        x, y, z = map(float, data["destination"].split(","))
+        print(f"🎯 Destination set to: x={x}, y={y}, z={z}")
+        return jsonify({"status": "OK", "destination": {"x": x, "y": y, "z": z}})
     except Exception as e:
         return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
 
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
-    """Receives obstacle data from the simulator and logs it."""
-    obstacle_data = request.get_json()
-
-    if not obstacle_data:
+    data = request.get_json()
+    if not data:
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
-    print("Received obstacle data:", obstacle_data)
-    return jsonify({'status': 'success', 'message': 'Obstacle data received'}), 200
+    print("🪨 Obstacle Data:", data)
+    return jsonify({'status': 'success', 'message': 'Obstacle data received'})
 
+#Endpoint called when the episode starts
+@app.route('/init', methods=['GET'])
+def init():
+    config = {
+        "startMode": "start",  # Options: "start" or "pause"
+        "blStartX": 60,  #Blue Start Position
+        "blStartY": 10,
+        "blStartZ": 27.23,
+        "rdStartX": 59, #Red Start Position
+        "rdStartY": 10,
+        "rdStartZ": 280
+    }
+    print("🛠️ Initialization config sent via /init:", config)
+    return jsonify(config)
+
+@app.route('/start', methods=['GET'])
+def start():
+    print("🚀 /start command received")
+    return jsonify({"control": ""})
+
+@app.route('/test_rotation', methods=['POST'])
+def test_rotation():
+    global action_command
+    data = request.get_json()
+    rotation_type = data.get('type', 'Q')  # Q, E, F, R
+    count = data.get('count', 1)  # 회전 명령 횟수
+    
+    # 기존 명령어 초기화 후 새로운 테스트 명령 추가
+    action_command = []  # 기존 명령어 초기화
+    
+    # 회전 명령 추가 (각 명령 사이에 정지 명령 추가)
+    for _ in range(count):
+        action_command.append({"turret": rotation_type, "weight": 1.0})
+        action_command.append({"turret": rotation_type, "weight": 0.0})  # 각 회전 후 정지
+    
+    test_info = {
+        'rotation_type': rotation_type,
+        'count': count,
+        'timestamp': time.strftime('%H:%M:%S'),
+        'rotation_desc': {
+            'Q': 'Left',
+            'E': 'Right',
+            'F': 'Down',
+            'R': 'Up'
+        }.get(rotation_type, 'Unknown')
+    }
+    
+    print(f"🔄 Testing {test_info['rotation_desc']} rotation ({rotation_type}) x {count}")
+    socketio.emit('rotation_test', test_info)
+    
+    return jsonify({"status": "OK", "message": "Rotation test started"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)
