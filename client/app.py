@@ -60,7 +60,7 @@ def detect():
 
 @app.route('/info', methods=['POST'])
 def info():
-    print('🚨 info >>>')
+    # print('🚨 info >>>')
     global PLAYER_DATA
     data = request.get_json(force=True)
     if not data:
@@ -190,8 +190,8 @@ def init():
         "startMode": "start",  # Options: "start" or "pause"
         "blStartX": 60,  #Blue Start Position
         "blStartY": 10,
-        "blStartZ": 27.23,
-        "rdStartX": 59, #Red Start Position
+        "blStartZ": 30,
+        "rdStartX": 60, #Red Start Position
         "rdStartY": 10,
         "rdStartZ": 280
     }
@@ -200,7 +200,7 @@ def init():
 
 @app.route('/start', methods=['GET'])
 def start():
-    print('🚨 start >>>')
+    # print('🚨 start >>>')
     # print("🚀 /start command received")
     return jsonify({"control": ""})
 
