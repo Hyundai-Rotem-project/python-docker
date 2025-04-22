@@ -17,8 +17,8 @@ move_command = []
 # Action commands with weights (15+ variations)
 action_command = []
 
-PLAYER_DATA = {}
-DESTINATION = ()
+player_data = {}
+destination = ()
 
 @app.route('/dashboard')
 def dashboard():
@@ -61,14 +61,14 @@ def detect():
 @app.route('/info', methods=['POST'])
 def info():
     # print('🚨 info >>>')
-    global PLAYER_DATA
+    global player_data
     data = request.get_json(force=True)
     if not data:
         return jsonify({"error": "No JSON received"}), 400
 
     # print("📨 /info data received:", data)
     
-    PLAYER_DATA = {
+    player_data = {
         'pos': {
             'x': data.get('playerPos', {}).get('x'),
             'y': data.get('playerPos', {}).get('y'),
@@ -151,7 +151,7 @@ def update_bullet():
 @app.route('/set_destination', methods=['POST'])
 def set_destination():
     print('🚨 set_destination >>>')
-    global DESTINATION
+    global destination
     global action_command
     data = request.get_json()
     action_command = []
@@ -160,13 +160,13 @@ def set_destination():
 
     try:
         x, y, z = map(float, data["destination"].split(","))
-        DESTINATION = {
+        destination = {
             'x': x,
             'y': y,
             'z': z,
         }
-        print(f"🎯 Destination set to: x={x}, y={y}, z={z}")
-        action_command = turret.generate_action_command(PLAYER_DATA['pos'], PLAYER_DATA['turret_x'], PLAYER_DATA['turret_y'], DESTINATION)
+        print(f"🎯 destination set to: x={x}, y={y}, z={z}")
+        action_command = turret.generate_action_command(player_data['pos'], player_data['turret_x'], player_data['turret_y'], destination)
         print('action_command????', action_command)
         return jsonify({"status": "OK", "destination": {"x": x, "y": y, "z": z}})
     except Exception as e:
