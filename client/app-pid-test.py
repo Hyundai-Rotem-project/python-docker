@@ -5,7 +5,9 @@ import os
 import torch
 from ultralytics import YOLO
 import time
+import math
 import modules.turret as turret
+import modules.turret_test as turret_t
 
 app = Flask(__name__)
 model = YOLO('yolov8n.pt')
@@ -73,7 +75,7 @@ def info():
     if not data:
         return jsonify({"error": "No JSON received"}), 400
 
-    # print("📨 /info data received:", data)
+    print("📨 /info data received:", data.get('playerBodyX'), data.get('playerBodyY'), data.get('playerBodyZ'))
     
     player_data = {
         'pos': {
@@ -97,6 +99,7 @@ def info():
     #    return jsonify({"stsaatus": "success", "control": "reset"})
     return jsonify({"status": "success", "control": ""})
 
+action_control = True
 @app.route('/update_position', methods=['POST'])
 def update_position():
     print('🚨 update_position >>>')
@@ -126,23 +129,36 @@ def get_move():
 @app.route('/get_action', methods=['GET'])
 def get_action():
     global action_command
+    global destination
+    global player_data
+    global action_control
     print('🚨 get_action >>>', action_command)
-    if action_command:
-        command = action_command.pop(0)
-        print(f"🔫 Action Command: {command}")
+
+    if player_data and destination and action_control:
+        action = turret_t.generate_action_command(player_data['pos'], player_data['turret_x'], player_data['turret_y'], destination)
+        # action_command.extend(action)
+        print(f"🔫 Action Command: {action}")
+        command = action.pop(0)
+        if command['weight'] == 0.0:
+            action_control = False
         return jsonify(command)
     else:
         return jsonify({"turret": "", "weight": 0.0})
 
+    # if action_command and action_control:
+    #     command = action_command.pop(0)
+    #     print(f"🔫 Action Command: {command}")
+    #     if command[-1]['turret'] == "FIRE":
+    #         action_control = False
+    #     return jsonify(command)
+    # else:
+    #     return jsonify({"turret": "", "weight": 0.0})
+
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
-    global destination
-    global impact_info
-    global player_data
-    global action_command
     print('🚨 update_bullet >>>')
+    global impact_info
     data = request.get_json()
-    action_command = []
     if not data:
         return jsonify({"status": "ERROR", "message": "Invalid request data"}), 400
 
@@ -154,13 +170,6 @@ def update_bullet():
         'timestamp': time.strftime('%H:%M:%S')
     }
     
-    is_hit = turret.is_hit(destination, impact_info)
-    print('💥', is_hit)
-    if not is_hit:
-        time.sleep(5)
-        action_command = turret.adjust_gun_angle(player_data['pos'], impact_info, destination)
-        print('is_hit >> action_command????', action_command)
-    
     print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
     
     socketio.emit('bullet_impact', impact_info)
@@ -171,9 +180,9 @@ def update_bullet():
 def set_destination():
     print('🚨 set_destination >>>')
     global destination
-    global action_command
+    # global action_command
     data = request.get_json()
-    action_command = []
+    # action_command = []
     if not data or "destination" not in data:
         return jsonify({"status": "ERROR", "message": "Missing destination data"}), 400
 
@@ -185,8 +194,8 @@ def set_destination():
             'z': z,
         }
         print(f"🎯 destination set to: x={x}, y={y}, z={z}")
-        action_command = turret.generate_action_command(player_data['pos'], player_data['turret_x'], player_data['turret_y'], player_data['body_y'], destination)
-        print('action_command????', action_command)
+        # action_command = turret.generate_action_command(player_data['pos'], player_data['turret_x'], player_data['turret_y'], destination)
+        # print('action_command????', action_command)
         return jsonify({"status": "OK", "destination": {"x": x, "y": y, "z": z}})
     except Exception as e:
         return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
@@ -209,7 +218,7 @@ def init():
         "startMode": "start",  # Options: "start" or "pause"
         "blStartX": 60,  #Blue Start Position
         "blStartY": 10,
-        "blStartZ": 57,
+        "blStartZ": 30,
         "rdStartX": 60, #Red Start Position
         "rdStartY": 10,
         "rdStartZ": 280

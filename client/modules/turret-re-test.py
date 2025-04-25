@@ -33,42 +33,58 @@ def add_action_command(type, diff, difault_w):
     return action_command
     # return (action_command, reverse_action_command)
 
-def generate_action_command(player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos):
-    print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
-    action_command = []
+def is_hit(target_pos, bullet_pos, tolerance=5.5):
+    dx = target_pos["x"] - bullet_pos["x"]
+    # dy = target_pos["y"] - bullet_pos["y"]
+    dz = target_pos["z"] - bullet_pos["z"]
 
-    # 벡터 차이로 방향 계산
-    dx = target_pos["x"] - player_pos["x"]
-    dy = target_pos["y"] - player_pos["y"]
-    dz = target_pos["z"] - player_pos["z"]
-    
-    # 🎯 사정거리 조건 확인
+    distance = math.sqrt(dx ** 2 + dz ** 2)
+    is_hit = distance <= tolerance
+    return is_hit
+    # return (distance, is_hit)
+
+def get_angles(from_pos, to_pos):
+    """
+    from_pos에서 to_pos를 향한 yaw, pitch 각도 계산
+    """
+    dx = to_pos['x'] - from_pos['x']
+    dy = to_pos['y'] - from_pos['y']
+    dz = to_pos['z'] - from_pos['z']
+
     flat_distance = math.sqrt(dx**2 + dz**2)
-    if not (MIN_SHOOTING_RANGE <= flat_distance <= MAX_SHOOTING_RANGE):
-        print(f"🤢 [INFO] Target z={flat_distance:.2f} is out of range ({MIN_SHOOTING_RANGE:.2f}~{MAX_SHOOTING_RANGE:.2f}).")
-        return action_command
+    yaw = math.degrees(math.atan2(dx, dz))         # 좌우
+    pitch = math.degrees(math.atan2(dy, flat_distance))  # 상하
 
-    # 목표까지의 방향 각도 (수평 기준)
-    target_yaw = math.degrees(math.atan2(dx, dz))  # atan2(x, z)
-    a, b, c = PITCH_ESTIMATION_COEFFICIENTS
-    target_pitch = max(min(a * (flat_distance ** 2) + b * flat_distance + c, 10), -5)
+    return yaw, pitch
 
-    # 각도 차이 계산
-    yaw_diff = calculate_angle_diff(target_yaw, turret_x_angle)
-    pitch_diff = target_pitch - turret_y_angle
-    # pitch_diff = target_pitch - turret_y_angle - player_y_angle
+def adjust_gun_angle(tank_pos, hit_pos, target_pos):
+    """
+    포신의 yaw, pitch를 타겟에 정확히 맞도록 조절하는 각도 차이 계산
+
+    Returns:
+    - yaw_adjustment: 수평 방향 조정 각도 (deg)
+    - pitch_adjustment: 상하 방향 조정 각도 (deg)
+    """
+    print("???🐟🐟???", tank_pos, hit_pos, target_pos)
+    # 전차 → 포탄이 실제 터진 위치
+    hit_yaw, hit_pitch = get_angles(tank_pos, hit_pos)
+
+    # 전차 → 타겟 위치
+    target_yaw, target_pitch = get_angles(tank_pos, target_pos)
+
+    # 실제 포신 방향 → 타겟을 맞추기 위해 조정해야 할 각도
+    yaw_adjustment = target_yaw - hit_yaw
+    pitch_adjustment = target_pitch - hit_pitch
+
 
     # 수평(Q/E) / 수직(R/F)
-    hor_action = add_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
-    ver_action = add_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
+    hor_action = add_action_command('hor', yaw_adjustment, HORIZONTAL_DEGREE_PER_WEIGHT)
+    ver_action = add_action_command('ver', pitch_adjustment, VERTICAL_DEGREE_PER_WEIGHT)
     # hor_action, reverse_hor_action = add_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
     # ver_action, reverse_ver_action = add_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
     action_command = [*hor_action, *ver_action]
-    # reverse_action_command = [*reverse_hor_action, *reverse_ver_action]
 
-    # 마지막에 발사 명령 추가
     action_command.append({"turret": "FIRE"})
-    # action_command.extend(reverse_action_command)
     action_command.append({"turret": "Q", "weight": 0.0})
 
     return action_command
