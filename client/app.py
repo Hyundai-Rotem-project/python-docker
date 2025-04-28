@@ -158,10 +158,11 @@ def update_bullet():
     print('💥', is_hit)
     if not is_hit:
         time.sleep(5)
-        action_command = turret.generate_action_command(player_data['pos'], destination, impact_info)
+        action_command = turret.get_action_command(player_data['pos'], destination, impact_info)
         print('is_hit >> action_command????', action_command)
     else: 
         print("Hit!!!!!")
+        action_command = turret.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_y'])
     
     print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
     
@@ -187,7 +188,7 @@ def set_destination():
             'z': z,
         }
         print(f"🎯 destination set to: x={x}, y={y}, z={z}")
-        action_command = turret.generate_action_command(player_data['pos'], destination, turret_x_angle=player_data['turret_x'], turret_y_angle=player_data['turret_y'], player_y_angle=player_data['body_y'])
+        action_command = turret.get_action_command(player_data['pos'], destination, turret_x_angle=player_data['turret_x'], turret_y_angle=player_data['turret_y'], player_y_angle=player_data['body_y'])
         print('action_command????', action_command)
         return jsonify({"status": "OK", "destination": {"x": x, "y": y, "z": z}})
     except Exception as e:

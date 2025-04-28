@@ -14,24 +14,20 @@ def calculate_angle_diff(target_angle, current_angle):
     diff = (target_angle - current_angle + 180) % 360 - 180
     return diff
 
-def add_action_command(type, diff, difault_w):
+# action_command 생성성
+def generate_action_command(type, diff, difault_w):
     action_command = []
-    # reverse_action_command = []
     while abs(diff) > 0.1:
         if diff > 0:
             direction = "E" if type == 'hor' else "R"
-            # reverse_dir = "Q" if type == 'hor' else "F"
         else:
             direction = "Q" if type == 'hor' else "F"
-            # reverse_dir = "E" if type == 'hor' else "R"
 
         weight = min(abs(diff) / difault_w, 1.0)
         action_command.append({"turret": direction, "weight": weight})
-        # reverse_action_command.append({"turret": reverse_dir, "weight": weight})
         diff -= math.copysign(weight * difault_w, diff)
 
     return action_command
-    # return (action_command, reverse_action_command)
 
 def get_angles(from_pos, to_pos):
     dx = to_pos['x'] - from_pos['x']
@@ -46,14 +42,14 @@ def get_angles(from_pos, to_pos):
 
     return flat_distance, yaw, pitch
 
-def generate_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
+def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
     print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
     action_command = []
 
     flat_distance, target_yaw, target_pitch = get_angles(player_pos, target_pos)
 
-    # 🎯 사정거리 조건 확인
     if hit_pos is None:
+        # 첫 번째 발사
         if not (MIN_SHOOTING_RANGE <= flat_distance <= MAX_SHOOTING_RANGE):
             print(f"🤢 [INFO] Target z={flat_distance:.2f} is out of range ({MIN_SHOOTING_RANGE:.2f}~{MAX_SHOOTING_RANGE:.2f}).")
             return action_command
@@ -65,8 +61,9 @@ def generate_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle
         
         yaw_diff = calculate_angle_diff(target_yaw, current_yaw)
         pitch_diff = target_pitch - turret_y_angle - player_y_angle
-        # pitch_diff = target_pitch - turret_y_angle # 재조준 테스트 위한 오조준준
+        # pitch_diff = target_pitch - turret_y_angle # 재조준 테스트 위한 오조준
     else:
+        # 재조준
         _, hit_yaw, hit_pitch = get_angles(player_pos, hit_pos)
         current_yaw = hit_yaw
         current_pitch = hit_pitch
@@ -75,20 +72,16 @@ def generate_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle
         pitch_diff = calculate_angle_diff(target_pitch, current_pitch)
 
     # 수평(Q/E) / 수직(R/F)
-    hor_action = add_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
-    ver_action = add_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
-    # hor_action, reverse_hor_action = add_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
-    # ver_action, reverse_ver_action = add_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
-    action_command = [*hor_action, *ver_action]
-    # reverse_action_command = [*reverse_hor_action, *reverse_ver_action]
+    hor_action = generate_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
+    ver_action = generate_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
 
-    # 마지막에 발사 명령 추가
+    action_command = [*hor_action, *ver_action]
     action_command.append({"turret": "FIRE"})
-    # action_command.extend(reverse_action_command)
     action_command.append({"turret": "Q", "weight": 0.0})
 
     return action_command
 
+# 명중 확인
 def is_hit(target_pos, bullet_pos, tolerance=5.5):
     dx = target_pos["x"] - bullet_pos["x"]
     # dy = target_pos["y"] - bullet_pos["y"]
@@ -98,4 +91,16 @@ def is_hit(target_pos, bullet_pos, tolerance=5.5):
     is_hit = distance <= tolerance
     return is_hit
     # return (distance, is_hit)
+
+# 명중 후 turret 원위치
+def get_reverse_action_command(turret_x_angle, turret_y_angle, player_y_angle):
+    action_command = []
+    yaw_diff = calculate_angle_diff(0, turret_x_angle)
+    pitch_diff = -turret_y_angle - player_y_angle
     
+    # 수평(Q/E) / 수직(R/F)
+    hor_action = generate_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
+    ver_action = generate_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
+    action_command = [*hor_action, *ver_action]
+    action_command.append({"turret": "Q", "weight": 0.0})
+    return action_command
