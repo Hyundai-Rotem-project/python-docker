@@ -24,9 +24,6 @@ destination = {}
 # update_bullet
 impact_info = {}
 
-# 조준 허용 오차(degree)
-TOLERANCE = 5.5
-
 @app.route('/dashboard')
 def dashboard():
     print('🚨 dashboard >>>')

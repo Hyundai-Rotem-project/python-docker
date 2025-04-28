@@ -7,7 +7,7 @@ from ultralytics import YOLO
 import time
 import math
 import modules.turret as turret
-import modules.turret_test as turret_t
+import modules.turret_pid_test as turret_t
 
 app = Flask(__name__)
 model = YOLO('yolov8n.pt')
@@ -25,9 +25,6 @@ player_data = {}
 destination = {}
 # update_bullet
 impact_info = {}
-
-# 조준 허용 오차(degree)
-TOLERANCE = 5.5
 
 @app.route('/dashboard')
 def dashboard():
@@ -102,7 +99,7 @@ def info():
 action_control = True
 @app.route('/update_position', methods=['POST'])
 def update_position():
-    print('🚨 update_position >>>')
+    # print('🚨 update_position >>>')
     data = request.get_json()
     if not data or "position" not in data:
         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
@@ -117,7 +114,7 @@ def update_position():
 
 @app.route('/get_move', methods=['GET'])
 def get_move():
-    print('🚨 get_move >>>')
+    # print('🚨 get_move >>>')
     global move_command
     if move_command:
         command = move_command.pop(0)
@@ -126,38 +123,64 @@ def get_move():
     else:
         return jsonify({"move": "STOP", "weight": 1.0})
 
+impact_control = False
+is_hit = -1
 @app.route('/get_action', methods=['GET'])
 def get_action():
     global action_command
     global destination
     global player_data
     global action_control
-    print('🚨 get_action >>>', action_command)
+    global impact_control
+    global is_hit
+    print('🚨 get_action >>>')
 
     if player_data and destination and action_control:
-        action = turret_t.generate_action_command(player_data['pos'], player_data['turret_x'], player_data['turret_y'], destination)
-        # action_command.extend(action)
-        print(f"🔫 Action Command: {action}")
-        command = action.pop(0)
-        if command['weight'] == 0.0:
-            action_control = False
+        if not impact_control:
+            print("is_hit >>>", is_hit)
+            match is_hit:
+                case -1: # 포 날리기 전
+                    print("case -1")
+                    action_command = turret_t.get_action_command(player_data['pos'], destination, turret_x_angle=player_data['turret_x'], turret_y_angle=player_data['turret_y'], player_y_angle=player_data['body_y'])
+                    print(f"🔫 Action Command: {action_command}")
+                case 0: # 빗나감
+                    print("case 0")
+                    # time.sleep(5)
+                    action_command = turret_t.get_action_command(player_data['pos'], destination, impact_info)
+                    print('action_command????', action_command)
+                case 1: # 명중
+                    print("case 1")
+                    action_command = turret_t.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_y'])
+                    print('action_command????', action_command)
+                    command = action_command.pop(0)
+                    if len(action_command) == 0:
+                        impact_control = True
+                        is_hit = -1
+
+            if is_hit != 1:
+                command = action_command.pop(0)
+                if command['turret'] == "FIRE":
+                    impact_control = True
+                    print("impact_control False", action_command)
+        else:
+            print("impact_control True", action_command)
+            command = action_command.pop(0)
+            print(f"🔫 Action Command: END!!!!")
+            
+            impact_control = False
+            if is_hit == 1:
+                action_control = False
+
         return jsonify(command)
     else:
         return jsonify({"turret": "", "weight": 0.0})
 
-    # if action_command and action_control:
-    #     command = action_command.pop(0)
-    #     print(f"🔫 Action Command: {command}")
-    #     if command[-1]['turret'] == "FIRE":
-    #         action_control = False
-    #     return jsonify(command)
-    # else:
-    #     return jsonify({"turret": "", "weight": 0.0})
-
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
-    print('🚨 update_bullet >>>')
+    global destination
     global impact_info
+    global is_hit
+    print('🚨 update_bullet >>>')
     data = request.get_json()
     if not data:
         return jsonify({"status": "ERROR", "message": "Invalid request data"}), 400
@@ -170,6 +193,8 @@ def update_bullet():
         'timestamp': time.strftime('%H:%M:%S')
     }
     
+    is_hit = turret_t.is_hit(destination, impact_info)
+    print('💥', is_hit)
     print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
     
     socketio.emit('bullet_impact', impact_info)
