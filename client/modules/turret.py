@@ -33,30 +33,46 @@ def add_action_command(type, diff, difault_w):
     return action_command
     # return (action_command, reverse_action_command)
 
-def generate_action_command(player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos):
+def get_angles(from_pos, to_pos):
+    dx = to_pos['x'] - from_pos['x']
+    dy = to_pos['y'] - from_pos['y']
+    dz = to_pos['z'] - from_pos['z']
+
+    flat_distance = math.sqrt(dx**2 + dz**2)
+    
+    yaw = math.degrees(math.atan2(dx, dz))
+    a, b, c = PITCH_ESTIMATION_COEFFICIENTS
+    pitch = max(min(a * (flat_distance ** 2) + b * flat_distance + c, 10), -5)
+
+    return flat_distance, yaw, pitch
+
+def generate_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
     print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
     action_command = []
 
-    # 벡터 차이로 방향 계산
-    dx = target_pos["x"] - player_pos["x"]
-    dy = target_pos["y"] - player_pos["y"]
-    dz = target_pos["z"] - player_pos["z"]
-    
+    flat_distance, target_yaw, target_pitch = get_angles(player_pos, target_pos)
+
     # 🎯 사정거리 조건 확인
-    flat_distance = math.sqrt(dx**2 + dz**2)
-    if not (MIN_SHOOTING_RANGE <= flat_distance <= MAX_SHOOTING_RANGE):
-        print(f"🤢 [INFO] Target z={flat_distance:.2f} is out of range ({MIN_SHOOTING_RANGE:.2f}~{MAX_SHOOTING_RANGE:.2f}).")
-        return action_command
+    if hit_pos is None:
+        if not (MIN_SHOOTING_RANGE <= flat_distance <= MAX_SHOOTING_RANGE):
+            print(f"🤢 [INFO] Target z={flat_distance:.2f} is out of range ({MIN_SHOOTING_RANGE:.2f}~{MAX_SHOOTING_RANGE:.2f}).")
+            return action_command
+        
+        if turret_x_angle is None or turret_y_angle is None or player_y_angle is None:
+            raise ValueError("turret_x_angle, turret_y_angle, player_y_angle must be provided if hit_pos is None.")
+        current_yaw = turret_x_angle
+        current_pitch = turret_y_angle - player_y_angle
+        
+        yaw_diff = calculate_angle_diff(target_yaw, current_yaw)
+        pitch_diff = target_pitch - turret_y_angle - player_y_angle
+        # pitch_diff = target_pitch - turret_y_angle # 재조준 테스트 위한 오조준준
+    else:
+        _, hit_yaw, hit_pitch = get_angles(player_pos, hit_pos)
+        current_yaw = hit_yaw
+        current_pitch = hit_pitch
 
-    # 목표까지의 방향 각도 (수평 기준)
-    target_yaw = math.degrees(math.atan2(dx, dz))  # atan2(x, z)
-    a, b, c = PITCH_ESTIMATION_COEFFICIENTS
-    target_pitch = max(min(a * (flat_distance ** 2) + b * flat_distance + c, 10), -5)
-
-    # 각도 차이 계산
-    yaw_diff = calculate_angle_diff(target_yaw, turret_x_angle)
-    pitch_diff = target_pitch - turret_y_angle
-    # pitch_diff = target_pitch - turret_y_angle - player_y_angle
+        yaw_diff = calculate_angle_diff(target_yaw, current_yaw)
+        pitch_diff = calculate_angle_diff(target_pitch, current_pitch)
 
     # 수평(Q/E) / 수직(R/F)
     hor_action = add_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
@@ -72,3 +88,14 @@ def generate_action_command(player_pos, turret_x_angle, turret_y_angle, player_y
     action_command.append({"turret": "Q", "weight": 0.0})
 
     return action_command
+
+def is_hit(target_pos, bullet_pos, tolerance=5.5):
+    dx = target_pos["x"] - bullet_pos["x"]
+    # dy = target_pos["y"] - bullet_pos["y"]
+    dz = target_pos["z"] - bullet_pos["z"]
+
+    distance = math.sqrt(dx ** 2 + dz ** 2)
+    is_hit = distance <= tolerance
+    return is_hit
+    # return (distance, is_hit)
+    
