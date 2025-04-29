@@ -15,27 +15,13 @@ import numpy as np
 
 app = Flask(__name__)
 
+
 # Node 클래스
 class Node:
     def __init__(self, x, z):
         self.x = x
         self.z = z
         self.is_obstacle = False
-
-    def __lt__(self, other):
-        """Node 비교를 위한 메서드: (x, z) 좌표를 lexicographically 비교"""
-        if not isinstance(other, Node):
-            return NotImplemented
-        return (self.x, self.z) < (other.x, other.z)
-
-    def __eq__(self, other):
-        """Node 동일성 비교"""
-        if not isinstance(other, Node):
-            return False
-        return (self.x, self.z) == (other.x, other.z)
-
-    def __repr__(self):
-        return f"Node({self.x}, {self.z})"
 
 # Grid 클래스
 class Grid:
@@ -45,26 +31,19 @@ class Grid:
         self.grid = [[Node(x, z) for z in range(height)] for x in range(width)]
 
     def node_from_world_point(self, world_x, world_z):
-        try:
-            grid_x = max(0, min(int(world_x), self.width - 1))
-            grid_z = max(0, min(int(world_z), self.height - 1))
-            print(f"🗺️ Node created: world=({world_x:.2f}, {world_z:.2f}) -> grid=({grid_x}, {grid_z})")
-            return self.grid[grid_x][grid_z]
-        except (TypeError, ValueError) as e:
-            print(f"🗺️ Node creation failed: world=({world_x}, {world_z}), error={e}")
-            raise ValueError(f"Invalid world coordinates: ({world_x}, {world_z})")
+        grid_x = max(0, min(int(world_x), self.width - 1))
+        grid_z = max(0, min(int(world_z), self.height - 1))
+        return self.grid[grid_x][grid_z]
 
     def set_obstacle(self, x_min, x_max, z_min, z_max):
-        # 장애물 주변 5m(5칸) 버퍼 추가
-        buffer = int(OBSTACLE_BUFFER)
-        x_min = max(0, min(int(x_min) - buffer, self.width - 1))
-        x_max = max(0, min(int(x_max) + buffer, self.width - 1))
-        z_min = max(0, min(int(z_min) - buffer, self.height - 1))
-        z_max = max(0, min(int(z_max) + buffer, self.height - 1))
+        x_min = max(0, min(int(x_min), self.width - 1))
+        x_max = max(0, min(int(x_max), self.width - 1))
+        z_min = max(0, min(int(z_min), self.height - 1))
+        z_max = max(0, min(int(z_max), self.height - 1))
         for x in range(x_min, x_max + 1):
             for z in range(z_min, z_max + 1):
                 self.grid[x][z].is_obstacle = True
-        print(f"🪨 Grid obstacle set with buffer: x_min={x_min}, x_max={x_max}, z_min={z_min}, z_max={z_max}")
+        print(f"🪨 Grid obstacle set: x_min={x_min}, x_max={x_max}, z_min={z_min}, z_max={z_max}")
 
     def get_neighbors(self, node):
         x, z = node.x, node.z
@@ -101,14 +80,12 @@ state_lock = threading.Lock()
 
 # 상수
 ROTATION_THRESHOLD_DEG = 5
-STOP_DISTANCE = 45.0
+STOP_DISTANCE = 45.0  # 목적지 도달 기준 거리 축소
 SLOWDOWN_DISTANCE = 120.0
 ROTATION_TIMEOUT = 0.8
 PAUSE_DURATION = 0.5
 WEIGHT_LEVELS = [1.0, 0.6, 0.3, 0.1, 0.05, 0.01]
 DETECTION_RANGE = 100.0
-SHOOTING_RANGE = 45.0  # 포격 거리 기준
-OBSTACLE_BUFFER = 5.0  # 장애물 회피 거리 (미터)
 
 # 클래스 정의
 ENEMY_CLASSES = {'car2', 'car3', 'tank'}
@@ -239,26 +216,12 @@ async def shoot_at_target(target_pos):
 # Grid 기반 A* 알고리즘
 def a_star(start, goal, grid):
     def heuristic(node, goal_node):
-        try:
-            if not (isinstance(node.x, (int, float)) and isinstance(node.z, (int, float)) and
-                    isinstance(goal_node.x, (int, float)) and isinstance(goal_node.z, (int, float))):
-                raise ValueError("Invalid node coordinates")
-            distance = math.sqrt((node.x - goal_node.x) ** 2 + (node.z - goal_node.z) ** 2)
-            if math.isnan(distance) or math.isinf(distance):
-                raise ValueError(f"Invalid heuristic distance: {distance}")
-            print(f"🛤️ Heuristic: node=({node.x}, {node.z}), goal_node=({goal_node.x}, {goal_node.z}), distance={distance:.2f}")
-            return distance
-        except Exception as e:
-            print(f"🛤️ Heuristic error: node=({node.x}, {node.z}), goal_node=({goal_node.x}, {goal_node.z}), error={e}")
-            raise
+        print(f"🛤️ Heuristic: node=({node.x}, {node.z}), goal_node=({goal_node.x}, {goal_node.z})")
+        return math.sqrt((node.x - goal_node.x) ** 2 + (node.z - goal_node.z) ** 2)
 
-    try:
-        start_node = grid.node_from_world_point(start[0], start[1])
-        goal_node = grid.node_from_world_point(goal[0], goal[1])
-        print(f"🛤️ A* calculating path from ({start_node.x}, {start_node.z}) to ({goal_node.x}, {goal_node.z})")
-    except Exception as e:
-        print(f"🛤️ A* failed to initialize: start={start}, goal={goal}, error={e}")
-        return []
+    start_node = grid.node_from_world_point(start[0], start[1])
+    goal_node = grid.node_from_world_point(goal[0], goal[1])
+    print(f"🛤️ A* calculating path from ({start_node.x}, {start_node.z}) to ({goal_node.x}, {goal_node.z})")
 
     open_set = []
     heapq.heappush(open_set, (0 + heuristic(start_node, goal_node), 0, start_node))
@@ -267,16 +230,7 @@ def a_star(start, goal, grid):
     f_score = {start_node: heuristic(start_node, goal_node)}
 
     while open_set:
-        try:
-            f_score_val, current_g, current = heapq.heappop(open_set)
-            print(f"🛤️ Processing node: ({current.x}, {current.z}), f_score={f_score_val:.2f}, g_score={current_g}")
-        except IndexError:
-            print(f"🛤️ A* failed: open_set is empty")
-            return []
-        except Exception as e:
-            print(f"🛤️ A* failed to pop from open_set: error={e}")
-            return []
-
+        _, current_g, current = heapq.heappop(open_set)
         if current == goal_node:
             path = []
             while current in came_from:
@@ -294,7 +248,6 @@ def a_star(start, goal, grid):
                 g_score[neighbor] = tentative_g_score
                 f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal_node)
                 heapq.heappush(open_set, (f_score[neighbor], tentative_g_score, neighbor))
-                print(f"🛤️ Added neighbor: ({neighbor.x}, {neighbor.z}), f_score={f_score[neighbor]:.2f}")
     print(f"🛤️ A* path calculation failed: no path from ({start_node.x}, {start_node.z}) to ({goal_node.x}, {goal_node.z})")
     return []
 
@@ -306,13 +259,6 @@ async def move_towards_destination():
         with state_lock:
             current_pos = player_state["position"]
             dest = player_state["destination"]
-        if not (isinstance(current_pos, tuple) and isinstance(dest, tuple) and
-                len(current_pos) == 2 and len(dest) == 2):
-            print(f"🚫 Invalid position or destination: current_pos={current_pos}, dest={dest}")
-            with state_lock:
-                player_state["state"] = "STOPPED"
-            break
-
         distance_to_dest = math.sqrt((dest[0] - current_pos[0])**2 + (dest[1] - current_pos[1])**2)
         print(f"🚗 Current position: {current_pos}, destination: {dest}, distance: {distance_to_dest:.2f}, state: {player_state['state']}")
 
@@ -323,14 +269,7 @@ async def move_towards_destination():
             print(f"🎯 Reached destination: {dest}")
             break
 
-        try:
-            path = a_star(current_pos, dest, grid)
-        except Exception as e:
-            print(f"🚫 A* failed: current_pos={current_pos}, dest={dest}, error={e}")
-            with state_lock:
-                player_state["state"] = "STOPPED"
-            break
-
+        path = a_star(current_pos, dest, grid)
         if not path:
             with state_lock:
                 player_state["state"] = "STOPPED"
@@ -353,11 +292,9 @@ async def move_towards_destination():
             if obs_distance < DETECTION_RANGE:
                 detection = await analyze_obstacle(obstacle, idx)
                 class_name = detection["className"]
-                if class_name in ENEMY_CLASSES and obs_distance <= SHOOTING_RANGE:
+                if class_name in ENEMY_CLASSES:
                     await shoot_at_target(obs_center)
                     await asyncio.sleep(0.5)
-                elif class_name in ENEMY_CLASSES:
-                    print(f"Enemy detected but out of range: {class_name} at ({obs_center[0]:.2f}, {obs_center[1]:.2f}), distance={obs_distance:.2f}m")
 
         await asyncio.sleep(0.1)
     print("🏁 move_towards_destination stopped")
@@ -366,12 +303,8 @@ async def move_towards_destination():
 def run_async_task():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(move_towards_destination())
-    except Exception as e:
-        print(f"🚫 Async task failed: error={e}")
-    finally:
-        loop.close()
+    loop.run_until_complete(move_towards_destination())
+    loop.close()
 
 @app.route('/detect', methods=['POST'])
 def detect():

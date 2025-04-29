@@ -3,9 +3,9 @@ import asyncio
 import threading
 import math
 import requests
-from path_finding import a_star
-from detection import analyze_obstacle
-from config import STOP_DISTANCE, DETECTION_RANGE, SHOOTING_RANGE, ENEMY_CLASSES
+from modules.path_finding import a_star
+from modules.detection import analyze_obstacle
+from modules.config import STOP_DISTANCE, DETECTION_RANGE, SHOOTING_RANGE, ENEMY_CLASSES
 
 async def shoot_at_target(target_pos, player_state, state_lock):
     with state_lock:

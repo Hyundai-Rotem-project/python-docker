@@ -1,7 +1,7 @@
 # path_finding.py
 import heapq
 import math
-from grid import Node, Grid
+from modules.grid import Node, Grid
 
 def a_star(start, goal, grid):
     def heuristic(node, goal_node):

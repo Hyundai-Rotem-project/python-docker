@@ -1,6 +1,6 @@
 # grid.py
 import math
-from config import OBSTACLE_BUFFER
+from modules.config import OBSTACLE_BUFFER
 
 class Node:
     def __init__(self, x, z):

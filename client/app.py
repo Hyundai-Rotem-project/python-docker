@@ -3,10 +3,11 @@ from flask import Flask, request, jsonify
 import math
 import time
 import threading
-from grid import Grid
-from detection import detect
-from movement import run_async_task
-from config import (
+from modules.grid import Grid
+from modules.detection import detect
+import asyncio
+from modules.movement import run_async_task
+from modules.config import (
     ROTATION_THRESHOLD_DEG, STOP_DISTANCE, SLOWDOWN_DISTANCE,
     ROTATION_TIMEOUT, PAUSE_DURATION, WEIGHT_LEVELS, OBSTACLE_CLASSES
 )
