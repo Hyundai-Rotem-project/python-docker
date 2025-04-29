@@ -14,7 +14,7 @@ def calculate_angle_diff(target_angle, current_angle):
     diff = (target_angle - current_angle + 180) % 360 - 180
     return diff
 
-# action_command 생성성
+# action_command 생성
 def generate_action_command(type, diff, difault_w):
     action_command = []
     while abs(diff) > 0.1:
@@ -84,13 +84,11 @@ def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None
 # 명중 확인
 def is_hit(target_pos, bullet_pos, tolerance=5.5):
     dx = target_pos["x"] - bullet_pos["x"]
-    # dy = target_pos["y"] - bullet_pos["y"]
     dz = target_pos["z"] - bullet_pos["z"]
 
     distance = math.sqrt(dx ** 2 + dz ** 2)
     is_hit = distance <= tolerance
     return is_hit
-    # return (distance, is_hit)
 
 # 명중 후 turret 원위치
 def get_reverse_action_command(turret_x_angle, turret_y_angle, player_y_angle):

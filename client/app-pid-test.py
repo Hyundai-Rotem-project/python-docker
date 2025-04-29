@@ -124,6 +124,7 @@ def get_move():
         return jsonify({"move": "STOP", "weight": 1.0})
 
 impact_control = False
+has_action = False
 is_hit = -1
 @app.route('/get_action', methods=['GET'])
 def get_action():
@@ -132,32 +133,42 @@ def get_action():
     global player_data
     global action_control
     global impact_control
+    global has_action
     global is_hit
     print('🚨 get_action >>>')
 
     if player_data and destination and action_control:
+        command = {}
         if not impact_control:
             print("is_hit >>>", is_hit)
             match is_hit:
                 case -1: # 포 날리기 전
                     print("case -1")
                     action_command = turret_t.get_action_command(player_data['pos'], destination, turret_x_angle=player_data['turret_x'], turret_y_angle=player_data['turret_y'], player_y_angle=player_data['body_y'])
+                    has_action = True
                     print(f"🔫 Action Command: {action_command}")
-                case 0: # 빗나감
+                case 0: # 빗나간 경우
                     print("case 0")
-                    # time.sleep(5)
+                    if not has_action:
+                        time.sleep(5)
                     action_command = turret_t.get_action_command(player_data['pos'], destination, impact_info)
+                    has_action = True
                     print('action_command????', action_command)
                 case 1: # 명중
                     print("case 1")
-                    action_command = turret_t.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_y'])
+                    if not has_action:
+                        action_command = turret_t.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_y'])
+                        has_action = True
                     print('action_command????', action_command)
                     command = action_command.pop(0)
-                    if len(action_command) == 0:
-                        impact_control = True
+                    print("command????", command)
+                    if command['weight'] == 0.0:
+                        print("weight 0")
+                        action_control = False
+                        has_action = False
                         is_hit = -1
 
-            if is_hit != 1:
+            if is_hit != 1 and has_action:
                 command = action_command.pop(0)
                 if command['turret'] == "FIRE":
                     impact_control = True
@@ -165,11 +176,10 @@ def get_action():
         else:
             print("impact_control True", action_command)
             command = action_command.pop(0)
+            has_action = False
             print(f"🔫 Action Command: END!!!!")
             
             impact_control = False
-            if is_hit == 1:
-                action_control = False
 
         return jsonify(command)
     else:
@@ -243,7 +253,7 @@ def init():
         "startMode": "start",  # Options: "start" or "pause"
         "blStartX": 60,  #Blue Start Position
         "blStartY": 10,
-        "blStartZ": 30,
+        "blStartZ": 57,
         "rdStartX": 60, #Red Start Position
         "rdStartY": 10,
         "rdStartZ": 280
