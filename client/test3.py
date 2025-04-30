@@ -119,10 +119,10 @@ ROTATION_TIMEOUT = 2.0
 PAUSE_DURATION = 3.0    
 WEIGHT_LEVELS = [1.0, 0.6, 0.3, 0.1, 0.05, 0.01]
 DETECTION_RANGE = 100.0
-ENEMY_CLASSES = {'car002', 'car003', 'enemy'}
+ENEMY_CLASSES = {'car002', 'car003', 'tank', 'enemy'}
 FRIENDLY_CLASSES = {'car005'}
 OBSTACLE_CLASSES = {'rock1', 'rock2', 'wall1', 'wall2', 'human1'}
-CONFIDENCE_THRESHOLD = 0.7
+CONFIDENCE_THRESHOLD = 0.2
 TRAPPED_TIMEOUT = 1.0
 ESCAPE_ROTATION_ANGLE = 90.0
 SHOTS_PER_ENEMY = 1
@@ -146,38 +146,91 @@ async def analyze_obstacle(obstacle, index):
     x_center = (obstacle["x_min"] + obstacle["x_max"]) / 2
     z_center = (obstacle["z_min"] + obstacle["z_max"]) / 2
     image_data = obstacle.get("image")
-    target_classes = {0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
+
+    target_classes = {
+        0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1',
+        4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'
+    }
+
     class_name = 'unknown'
     confidence = 0.0
 
     if not image_data:
         print(f"🔍 YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
-        logging.info(f"🔍YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
+        logging.info(f"YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
         return {"className": class_name, "position": (x_center, z_center), "confidence": confidence}
 
     try:
         image_bytes = base64.b64decode(image_data)
-        image = Image.open(BytesIO(image_bytes))
+        image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        cv_image = np.array(image)
+        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+        image_np = np.array(image)
+        print(f"📸 Processing image for obstacle {index}, size: {image_np.shape}")
+        logging.info(f"Processing image for obstacle {index}, size: {image_np.shape}")
+
         results = model.predict(image, verbose=False)
-        detections = results[0].boxes.data.cpu().numpy()
+        if len(results) > 0 and hasattr(results[0], 'boxes') and results[0].boxes is not None:
+            detections = results[0].boxes.data.cpu().numpy()
+        else:
+            detections = np.array([])
+
+        print(f"🔍 Raw YOLO detections: {detections}")
+
         filtered_results = [
-            {'className': target_classes[int(box[5])], 'confidence': float(box[4])}
+            {'className': target_classes[int(box[5])], 'confidence': float(box[4]), 'bbox': box[:4]}
             for box in detections if int(box[5]) in target_classes
         ]
+
         if filtered_results:
             detection = max(filtered_results, key=lambda x: x['confidence'])
             class_name = detection['className']
             confidence = detection['confidence']
+            bbox = detection['bbox']
+            x1, y1, x2, y2 = map(int, bbox)
+            label = f"{class_name} {confidence:.2f}"
+
+            print(f"🧩Detected class: {class_name}")
+            print(f"🧩ENEMY_CLASSES: {ENEMY_CLASSES}")
+            print(f"🧩Is enemy? {class_name in ENEMY_CLASSES}")
+            print(f"🧩Is friendly? {class_name in FRIENDLY_CLASSES}")
+            print(f"🧩Is obstacle? {class_name in OBSTACLE_CLASSES}")
+            # ✅ 투명한 바운딩 박스 + 클래스명 표시 + 종류별 색깔 설정
+            overlay = cv_image.copy()
+
+            # 박스 색깔 지정
+            if class_name in ENEMY_CLASSES:
+                color = (0, 0, 255)  # 빨간색 (적)
+            elif class_name in FRIENDLY_CLASSES:
+                color = (255, 0, 0)  # 파란색 (아군)
+            elif class_name in OBSTACLE_CLASSES:
+                color = (0, 255, 0)  # 초록색 (장애물)
+            else:
+                color = (255, 255, 0)  # 노란색 (미분류)
+
+            # 사각형 테두리만
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), color, thickness=2)
+
+            # 라벨 텍스트
+            cv2.putText(overlay, label, (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+            # 투명도 적용
+            alpha = 0.3
+            cv_image = cv2.addWeighted(overlay, alpha, cv_image, 1 - alpha, 0)
+
             print(f"🔍 YOLO: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
             logging.info(f"YOLO: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
         else:
             print(f"🔍 YOLO: No valid detections at ({x_center:.2f}, {z_center:.2f})")
             logging.info(f"YOLO: No valid detections at ({x_center:.2f}, {z_center:.2f})")
+
     except Exception as e:
         print(f"🔍 YOLO failed: {e}")
         logging.error(f"YOLO failed: {e}")
-        class_name = 'unknown'
-
+        detections = np.array([])
+    
+    # 탐지 결과별 추가 출력
     if class_name in ENEMY_CLASSES and confidence >= CONFIDENCE_THRESHOLD:
         print(f"🔫 Enemy detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
         logging.info(f"Enemy detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
@@ -350,6 +403,49 @@ async def move_towards_destination():
 
         # 갇힘 감지
         if state == "MOVING":
+            enemy_found = False
+            enemy_position = None
+
+        for idx, obstacle in enumerate(obstacles):
+            obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
+            obs_distance = math.hypot(obs_center[0] - current_pos[0], obs_center[1] - current_pos[1])
+            # 거리 초과여서 적탐지가 무시됏는지 확인
+            print(f"🛰Player position: {current_pos}") 
+            print(f"🛰Obstacle center: {obs_center}")
+            print(f"🛰Distance to obstacle: {obs_distance:.2f}")
+
+            if obs_distance < DETECTION_RANGE:
+                detection = await analyze_obstacle(obstacle, idx)
+    
+                print(f"🧩 Detected object: {detection['className']} with confidence {detection['confidence']:.2f}")
+
+                if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
+                    enemy_found = True
+                    enemy_position = obs_center
+                    break
+        #Pause 상태에서 적 발견 시 포격
+        if enemy_found:
+            with state_lock:
+                player_state["state"] = "PAUSE"
+                player_state["pause_start_time"] = current_time
+            print(f"⏸ Enemy nearby, pausing for {ENEMY_PAUSE_DURATION}s and firing")
+            logging.info(f"Enemy nearby, pausing for {ENEMY_PAUSE_DURATION}s and firing")
+            await asyncio.sleep(ENEMY_PAUSE_DURATION)
+            await shoot_at_target(enemy_position)
+            print("🔫 Shot fired at detected enemy, re-planning path")
+            logging.info("Shot fired at detected enemy, re-planning path")
+
+            grid = Grid()
+            for obs in obstacles:
+                det = await analyze_obstacle(obs, 0)
+                if det["className"] in OBSTACLE_CLASSES:
+                    grid.set_obstacle(
+                        obs["x_min"], obs["x_max"],
+                        obs["z_min"], obs["z_max"],
+                        start_pos=current_pos, goal_pos=dest
+                    )
+            await asyncio.sleep(0.2)
+
             move_distance = math.hypot(current_pos[0] - player_state["last_move_position"][0],
                                       current_pos[1] - player_state["last_move_position"][1])
             if current_time - player_state["last_move_time"] > TRAPPED_TIMEOUT and move_distance < 0.5:
@@ -493,25 +589,41 @@ def run_async_task():
 @app.route('/detect', methods=['POST'])
 def detect():
     image = request.files.get('image')
-    print(image)
+    print(f"📸 Received image: {image}")
+    logging.info(f"Received image: {image}")
+
     if not image:
         print("Warning: YOLO: No image")
         logging.error("YOLO: No image")
         return jsonify({"error": "No image received"}), 400
     try:
-        image = Image.open(image)
-        results = model.predict(image, verbose=False)
-        detections = results[0].boxes.data.cpu().numpy()
-        target_classes = {0: 'car002', 1: 'car3', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
+        image_pil = Image.open(image).convert('RGB')
+        image_np = np.array(image_pil)
+        print(f"📸 Image size: {image_np.shape}")
+        logging.info(f"Image size: {image_np.shape}")
+        
+        # YOLO 예측 시 디버깅 정보 추가
+        results = model.predict(image_np, verbose=True, conf=0.3, imgsz=1280)
+        detections = results[0].boxes.data.cpu().numpy() if results and results[0].boxes else np.array([])
+        print(f"🔍 Raw YOLO: {detections}")
+        logging.info(f"YOLO: Raw detections: {detections}")
+
+        target_classes = {0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
         filtered_results = [
             {'className': target_classes[int(box[5])], 'bbox': [float(coord) for coord in box[:4]], 'confidence': float(box[4])}
             for box in detections if int(box[5]) in target_classes
         ]
+
+        for det in filtered_results:
+            print(f"🔍 Detected {det['className']} at bbox={det['bbox']}, confidence={det['confidence']:.2f}")
+            logging.info(f"Detected {det['className']} at bbox={det['bbox']}, confidence={det['confidence']:.2f}")
+
         print(f"🔍 YOLO: {len(filtered_results)} detections")
         logging.info(f"YOLO: {len(filtered_results)} detections")
         return jsonify(filtered_results)
+    
     except Exception as e:
-        print(f"🔍 YOLO failed: {e}")
+        print(f"🚫YOLO failed: {e}")
         logging.error(f"YOLO failed: {e}")
         return jsonify({"error": "Detection failed"}), 500
 
@@ -817,11 +929,11 @@ def set_destination():
 def update_obstacle():
     global obstacles, grid
     data = request.get_json()
-    if not data:
+    if not data or "obstacles" not in data:
         print("🚫 No obstacle data received")
         logging.error("No obstacle data received")
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
-    obstacles = data.get('obstacles', [])
+    
     grid = Grid()
     with state_lock:
         start_pos = player_state["position"]
@@ -834,9 +946,21 @@ def update_obstacle():
                 obstacle["z_min"], obstacle["z_max"],
                 start_pos=start_pos, goal_pos=goal_pos
             )
-    print(f"🪨 Obstacles: {len(obstacles)}")
-    logging.info(f"Obstacles: {len(obstacles)}")
-    return jsonify({'status': 'success', 'message': 'Obstacle data received'})
+    try:
+        with state_lock:
+            obstacles = data.get('obstacles', [])
+            print(f"🪨 Updated obstacles: {len(obstacles)}")
+            logging.info(f"Updated obstacles: {len(obstacles)}")
+            for idx, obs in enumerate(obstacles):
+                print(f"🪨 Obstacle {idx}: x_min={obs['x_min']}, x_max={obs['x_max']}, z_min={obs['z_min']}, z_max={obs['z_max']}, image={'present' if obs.get('image') else 'missing'}")
+                logging.info(f"Obstacle {idx}: x_min={obs['x_min']}, x_max={obs['x_max']}, z_min={obs['z_min']}, z_max={obs['z_max']}, image={'present' if obs.get('image') else 'missing'}")
+        return jsonify({"status": "OK", "obstacles": len(obstacles)})
+    
+    except Exception as e:
+        print(f"🚫 Update obstacle failed: {e}")
+        logging.error(f"Update obstacle failed: {e}", exc_info=True)
+        return jsonify({"error": f"Update obstacle failed: {str(e)}"}), 500
+    
 
 @app.route('/init', methods=['GET'])
 def init():

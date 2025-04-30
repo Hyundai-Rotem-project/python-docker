@@ -1,4 +1,3 @@
-#1m 버퍼
 from flask import Flask, request, jsonify
 import math
 import torch
@@ -13,7 +12,6 @@ from io import BytesIO
 from PIL import Image
 import numpy as np
 import logging
-import cv2
 
 app = Flask(__name__)
 
@@ -61,11 +59,10 @@ class Grid:
         return self.grid[grid_x][grid_z]
 
     def set_obstacle(self, x_min, x_max, z_min, z_max, start_pos=None, goal_pos=None):
-        # 1미터 버퍼 추가
-        x_min = max(0, min(int(round(x_min - 1.0)), self.width - 1))
-        x_max = max(0, min(int(round(x_max + 1.0)), self.width - 1))
-        z_min = max(0, min(int(round(z_min - 1.0)), self.height - 1))
-        z_max = max(0, min(int(round(z_max + 1.0)), self.height - 1))
+        x_min = max(0, min(int(round(x_min)), self.width - 1))
+        x_max = max(0, min(int(round(x_max)), self.width - 1))
+        z_min = max(0, min(int(round(z_min)), self.height - 1))
+        z_max = max(0, min(int(round(z_max)), self.height - 1))
         for x in range(x_min, x_max + 1):
             for z in range(z_min, z_max + 1):
                 if start_pos and goal_pos:
@@ -73,8 +70,8 @@ class Grid:
                        (x, z) == (int(round(goal_pos[0])), int(round(goal_pos[1]))):
                         continue
                 self.grid[x][z].is_obstacle = True
-        print(f"🪨 Obstacle set with 1m buffer: x_min={x_min}, x_max={x_max}, z_min={z_min}, z_max={z_max}")
-        logging.info(f"Obstacle set with 1m buffer: x_min={x_min}, x_max={x_max}, z_min={z_min}, z_max={z_max}")
+        print(f"🪨 Obstacle set: x_min={x_min}, x_max={x_max}, z_min={z_min}, z_max={z_max}")
+        logging.info(f"Obstacle set: x_min={x_min}, x_max={x_max}, z_min={z_min}, z_max={z_max}")
 
     def get_neighbors(self, node):
         x, z = node.x, node.z
@@ -109,50 +106,63 @@ player_state = {
     "last_move_position": None,
     "escape_rotation_target": None,
     "escape_start_time": None,
-    "shots_fired": 0
+    "shots_fired": 0,
+    "last_control" :None,
+    "last_weight":0.0,
+    "response":None
+    
 }
 state_lock = threading.Lock()
 
 # 상수
-ROTATION_THRESHOLD_DEG = 10
+ROTATION_THRESHOLD_DEG = 60
 ROTATION_TIMEOUT = 2.0
-PAUSE_DURATION = 3.0    
-WEIGHT_LEVELS = [1.0, 0.6, 0.3, 0.1, 0.05, 0.01]
+PAUSE_DURATION = 0.5
+WEIGHT_LEVELS = [1.0, 0.7, 0.4, 0.1, 0.05, 0.01]
 DETECTION_RANGE = 100.0
-ENEMY_CLASSES = {'car002', 'car003', 'enemy'}
-FRIENDLY_CLASSES = {'car005'}
-OBSTACLE_CLASSES = {'rock1', 'rock2', 'wall1', 'wall2', 'human1'}
+ENEMY_CLASSES = {'car2', 'car3', 'tank'}
+FRIENDLY_CLASSES = {'car5'}
+OBSTACLE_CLASSES = {'rock1', 'rock2', 'wall1', 'wall2'}
 CONFIDENCE_THRESHOLD = 0.7
-TRAPPED_TIMEOUT = 1.0
+TRAPPED_TIMEOUT = 2.0
 ESCAPE_ROTATION_ANGLE = 90.0
-SHOTS_PER_ENEMY = 1
+SHOTS_PER_ENEMY = 3
 SHOT_INTERVAL = 1.0
-ENEMY_PAUSE_DURATION = 3.0  # 적 발견 시 3초 대기
+ROTATION_THRESHOLD_DEG = 5    # 회전 완료 기준 (°)
+STOP_DISTANCE = 45.0          # 정지 거리 (m)
+SLOWDOWN_DISTANCE = 100.0     # 감속 시작 거리 (m)
+ROTATION_TIMEOUT = 0.8        # 회전 최대 시간 (s)
+PAUSE_DURATION = 0.5          # 회전 후 일시정지 (s)
 
 def select_weight(value, levels=WEIGHT_LEVELS):
     return min(levels, key=lambda x: abs(x - value))
 
 def calculate_move_weight(distance):
-    return select_weight(1.0)
-
-def calculate_rotation_weight(angle_diff_deg):
-    abs_deg = abs(angle_diff_deg)
-    if abs_deg < ROTATION_THRESHOLD_DEG:
+    if distance <= STOP_DISTANCE:
         return 0.0
-    target_weight = min(0.3, abs_deg / 90)
-    return select_weight(target_weight)
+    if distance > SLOWDOWN_DISTANCE:
+        return 1.0
+    norm = (distance - STOP_DISTANCE) / (SLOWDOWN_DISTANCE - STOP_DISTANCE)
+    target = 0.01 + (1.0 - 0.01) * (norm ** 2)
+    return select_weight(target)
+
+def calculate_rotation_weight(angle_deg):
+    if abs(angle_deg) < ROTATION_THRESHOLD_DEG:
+        return 0.0
+    target = min(0.3, (abs(angle_deg) / 45) * 0.3)
+    return select_weight(target)
 
 async def analyze_obstacle(obstacle, index):
     x_center = (obstacle["x_min"] + obstacle["x_max"]) / 2
     z_center = (obstacle["z_min"] + obstacle["z_max"]) / 2
     image_data = obstacle.get("image")
-    target_classes = {0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
+    target_classes = {0: 'car2', 1: 'car3', 2: 'car5', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
     class_name = 'unknown'
     confidence = 0.0
 
     if not image_data:
         print(f"🔍 YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
-        logging.info(f"🔍YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
+        logging.info(f"YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
         return {"className": class_name, "position": (x_center, z_center), "confidence": confidence}
 
     try:
@@ -196,7 +206,7 @@ async def analyze_obstacle(obstacle, index):
 async def shoot_at_target(target_pos):
     with state_lock:
         current_time = asyncio.get_event_loop().time()
-        player_state["last_shot_time"] = current_time - player_state["shot_cooldown"]
+        player_state["last_shot_time"] = current_time - player_state["shot_cooldown"]  # 쿨다운 무시
         player_state["last_shot_target"] = target_pos
         bullet_data = {"x": target_pos[0], "y": 0.0, "z": target_pos[1], "hit": "enemy"}
         for attempt in range(2):
@@ -295,46 +305,7 @@ async def move_towards_destination():
         print(f"🚗 Pos={current_pos}, Dest={dest}, Distance={distance:.2f}, State={state}, BodyX={body_x:.2f}")
         logging.info(f"Pos={current_pos}, Dest={dest}, Distance={distance:.2f}, State={state}, BodyX={body_x:.2f}")
 
-        # 목적지 근처 적 확인
-        enemy_at_destination = False
-        for idx, obstacle in enumerate(obstacles):
-            obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
-            dest_distance = math.hypot(obs_center[0] - dest[0], obs_center[1] - dest[1])
-            if dest_distance < 5.0:  # 목적지 5m 이내
-                detection = await analyze_obstacle(obstacle, idx)
-                if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
-                    enemy_at_destination = True
-                    print(f"🔫 Enemy at destination: {detection['className']} at {obs_center}, stopping at range")
-                    logging.info(f"Enemy at destination: {detection['className']} at {obs_center}, stopping at range")
-                    if distance <= DETECTION_RANGE:
-                        with state_lock:
-                            player_state["state"] = "PAUSE"
-                            player_state["pause_start_time"] = current_time
-                        print(f"⏸ Pausing for {ENEMY_PAUSE_DURATION}s before firing at destination enemy")
-                        logging.info(f"Pausing for {ENEMY_PAUSE_DURATION}s before firing at destination enemy")
-                        await asyncio.sleep(ENEMY_PAUSE_DURATION)
-                        await shoot_at_target(obs_center)
-                        print(f"🔫 Fired at destination enemy, re-planning path")
-                        logging.info(f"Fired at destination enemy, re-planning path")
-                        grid = Grid()  # 그리드 초기화
-                        for obs in obstacles:
-                            det = await analyze_obstacle(obs, 0)
-                            if det["className"] in OBSTACLE_CLASSES:
-                                grid.set_obstacle(
-                                    obs["x_min"], obs["x_max"],
-                                    obs["z_min"], obs["z_max"],
-                                    start_pos=current_pos, goal_pos=dest
-                                )
-                    else:
-                        # 사정거리 밖이면 계속 이동
-                        pass
-                    break
-
-        if enemy_at_destination and distance <= DETECTION_RANGE:
-            await asyncio.sleep(0.2)
-            continue
-
-        if distance <= 1.0 and not enemy_at_destination:
+        if distance <= 1.0:
             with state_lock:
                 player_state["state"] = "STOPPED"
                 player_state["destination"] = None
@@ -409,6 +380,7 @@ async def move_towards_destination():
 
         attempt = 0
         next_pos = path[1] if len(path) > 1 else dest
+        # 다음 웨이포인트 방향 검증
         dx = next_pos[0] - current_pos[0]
         dz = next_pos[1] - current_pos[1]
         dist = math.hypot(dx, dz)
@@ -430,45 +402,40 @@ async def move_towards_destination():
         logging.info(f"Moved to waypoint: {next_pos}, angle_to_next={angle_to_next:.2f}°")
 
         if state == "MOVING":
+            enemy_detected = False
             for idx, obstacle in enumerate(obstacles):
                 obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
                 obs_distance = math.hypot(obs_center[0] - current_pos[0], obs_center[1] - current_pos[1])
                 if obs_distance < DETECTION_RANGE:
                     detection = await analyze_obstacle(obstacle, idx)
                     if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
+                        enemy_detected = True
                         with state_lock:
-                            player_state["state"] = "PAUSE"
-                            player_state["pause_start_time"] = current_time
-                        print(f"⏸ Pausing for {ENEMY_PAUSE_DURATION}s before firing at enemy")
-                        logging.info(f"Pausing for {ENEMY_PAUSE_DURATION}s before firing at enemy")
-                        await asyncio.sleep(ENEMY_PAUSE_DURATION)
-                        await shoot_at_target(obs_center)
-                        print(f"🔫 Fired at enemy, re-planning path")
-                        logging.info(f"Fired at enemy, re-planning path")
-                        grid = Grid()  # 그리드 초기화
-                        for obs in obstacles:
-                            det = await analyze_obstacle(obs, 0)
-                            if det["className"] in OBSTACLE_CLASSES:
-                                grid.set_obstacle(
-                                    obs["x_min"], obs["x_max"],
-                                    obs["z_min"], obs["z_max"],
-                                    start_pos=current_pos, goal_pos=dest
-                                )
-                        break
+                            player_state["shots_fired"] = 0
+                        print(f"🔫 Enemy detected at {obs_center}, distance={obs_distance:.2f}m, firing {SHOTS_PER_ENEMY} shots")
+                        logging.info(f"Enemy detected at {obs_center}, distance={obs_distance:.2f}m, firing {SHOTS_PER_ENEMY} shots")
+                        for shot in range(SHOTS_PER_ENEMY):
+                            await shoot_at_target(obs_center)
+                            if shot < SHOTS_PER_ENEMY - 1:
+                                await asyncio.sleep(SHOT_INTERVAL)
+                        print(f"🚗 Resuming MOVING after firing {player_state['shots_fired']} shots")
+                        logging.info(f"Resuming MOVING after firing {player_state['shots_fired']} shots")
                     elif detection["className"] in OBSTACLE_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
-                        print(f"🪨 Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m")
-                        logging.info(f"Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m")
+                        print(f"🪨 Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m, continuing navigation")
+                        logging.info(f"Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m, continuing navigation")
                     else:
-                        print(f"🔫 Skipped: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
-                        logging.info(f"Skipped: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
+                        print(f"🔫 Skipped shooting: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
+                        logging.info(f"Skipped shooting: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
+            if enemy_detected:
+                with state_lock:
+                    player_state["distance_to_destination"] = distance
         await asyncio.sleep(0.2)
     print("🏁 Movement stopped")
     logging.info("Movement stopped")
 
 def check_obstacle_collision(x, z, obstacles):
     for obs in obstacles:
-        # 1미터 버퍼 적용
-        if (obs["x_min"] - 1.0) <= x <= (obs["x_max"] + 1.0) and (obs["z_min"] - 1.0) <= z <= (obs["z_max"] + 1.0):
+        if obs["x_min"] <= x <= obs["x_max"] and obs["z_min"] <= z <= obs["z_max"]:
             print(f"🚫 Collision at ({x:.2f}, {z:.2f})")
             logging.error(f"Collision at ({x:.2f}, {z:.2f})")
             return True
@@ -493,16 +460,15 @@ def run_async_task():
 @app.route('/detect', methods=['POST'])
 def detect():
     image = request.files.get('image')
-    print(image)
     if not image:
-        print("Warning: YOLO: No image")
+        print("🔍 YOLO: No image")
         logging.error("YOLO: No image")
         return jsonify({"error": "No image received"}), 400
     try:
         image = Image.open(image)
         results = model.predict(image, verbose=False)
         detections = results[0].boxes.data.cpu().numpy()
-        target_classes = {0: 'car002', 1: 'car3', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
+        target_classes = {0: 'car2', 1: 'car3', 2: 'car5', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
         filtered_results = [
             {'className': target_classes[int(box[5])], 'bbox': [float(coord) for coord in box[:4]], 'confidence': float(box[4])}
             for box in detections if int(box[5]) in target_classes
@@ -574,6 +540,7 @@ def info():
     current_time = time.time()
 
     with state_lock:
+        print(str(player_state["state"]))
         if player_state["state"] == "IDLE" and player_state["destination"]:
             player_state["state"] = "ROTATING"
             player_state["rotation_start_time"] = current_time
@@ -592,14 +559,16 @@ def info():
             dot = max(-1.0, min(1.0, fx*tx + fz*tz))
             angle_diff_rad = math.acos(dot)
             angle_diff_deg = math.degrees(angle_diff_rad)
+            cross = fx * tz - fz * tx
             expected_body_x = math.degrees(math.atan2(tz, tx)) % 360
             angle_diff = (expected_body_x - player_state["body_x"]) % 360
-            if angle_diff > 180:
-                angle_diff -= 360
-            control = "A" if angle_diff > 0 else "D"
-            print(f"🧭 ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
-            logging.info(f"ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
-            logging.warning(f"Client should update body_x to {expected_body_x:.2f}")
+            # if angle_diff > 180:
+            #     angle_diff -= 360
+            # control = "A" if angle_diff > 0 else "D"
+            control = "A" if cross >= 1 else "D"
+            # print(f"🧭 ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
+            # logging.info(f"ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
+            # logging.warning(f"Client should update body_x to {expected_body_x:.2f}")
             if abs(player_state["body_x"] - expected_body_x) < ROTATION_THRESHOLD_DEG:
                 player_state["state"] = "PAUSE"
                 player_state["pause_start_time"] = current_time
@@ -611,6 +580,7 @@ def info():
                 print("🔄 ROTATING -> PAUSE: timeout")
                 logging.info("ROTATING -> PAUSE: timeout")
             else:
+                control = "A" if cross >= 1 else "D"
                 weight = calculate_rotation_weight(angle_diff_deg)
 
         elif player_state["state"] == "ESCAPING":
@@ -652,6 +622,16 @@ def info():
                 player_state["state"] = "MOVING"
                 control = "W"
                 weight = calculate_move_weight(player_state["distance_to_destination"])
+                for obstacle in obstacles:
+                    obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
+                    obs_distance = math.hypot(obs_center[0] - player_state["position"][0], obs_center[1] - player_state["position"][1])
+                    if obs_distance < DETECTION_RANGE:
+                        detection = asyncio.run(analyze_obstacle(obstacle, 0))
+                        if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
+                            weight *= 0.5
+                            print(f"🚗 Slowing down: Enemy at {obs_center}, distance={obs_distance:.2f}m, new_weight={weight:.2f}")
+                            logging.info(f"Slowing down: Enemy at {obs_center}, distance={obs_distance:.2f}m, new_weight={weight:.2f}")
+                            break
                 threading.Thread(target=run_async_task, daemon=True).start()
                 print(f"🔄 PAUSE -> MOVING, control={control}, weight={weight:.2f}, duration={PAUSE_DURATION}s")
                 logging.info(f"PAUSE -> MOVING, control={control}, weight={weight:.2f}, duration={PAUSE_DURATION}s")
@@ -662,29 +642,69 @@ def info():
         elif player_state["state"] == "MOVING":
             dx, dz = player_state["destination"]
             px, pz = player_state["position"]
+            z_diff = abs(pz - dz)
             distance = math.hypot(dx - px, dz - pz)
-            if distance <= 1.0:
+            player_state["distance_to_destination"] = distance
+
+            fx, fz = math.cos(current_angle), math.sin(current_angle)
+            tx, tz = dx - px, dz - pz
+            dist = math.hypot(tx, tz)
+            if dist > 1e-6:
+                tx /= dist
+                tz /= dist
+            dot = max(-1.0, min(1.0, fx*tx + fz*tz))
+            angle_diff_rad = math.acos(dot)
+            angle_diff_deg = math.degrees(angle_diff_rad)
+            cross = fx * tz - fz * tx
+            # if distance <= 1.0:
+            #     print("angle_diff_deg1-"+str(abs(angle_diff_deg)))
+            #     print("STOP_DISTANCE1-"+str(STOP_DISTANCE))
+            #     print("z_diff1-"+str(z_diff))
+            #     player_state["state"] = "STOPPED"
+            #     player_state["destination"] = None
+            #     player_state["last_move_time"] = None
+            #     player_state["last_move_position"] = None
+            #     print(f"🎉 Arrived at destination: {player_state['destination']}")
+            #     logging.info(f"Arrived at destination: {player_state['destination']}")
+            # else:
+            #     fx, fz = math.cos(current_angle), math.sin(current_angle)
+            #     tx, tz = dx - px, dz - pz
+            #     dist = math.hypot(tx, tz)
+            #     z_diff = abs(pz - dz)
+            #     if dist > 1e-6:
+            #         tx /= dist
+            #         tz /= dist
+            #     dot = max(-1.0, min(1.0, fx*tx + fz*tz))
+            #     angle_diff_rad = math.acos(dot)
+            #     angle_diff_deg = math.degrees(angle_diff_rad)
+            #     # expected_body_x = math.degrees(math.atan2(tz, tx)) % 360
+            #     # angle_diff = (expected_body_x - player_state["body_x"]) % 360
+            #     cross = fx * tz - fz * tx
+
+                
+            # 도착 조건
+            # if player_state["distance_to_destination"] <= STOP_DISTANCE or z_diff < 5.0:
+            if distance  <= STOP_DISTANCE:
                 player_state["state"] = "STOPPED"
                 player_state["destination"] = None
                 player_state["last_move_time"] = None
                 player_state["last_move_position"] = None
                 print(f"🎉 Arrived at destination: {player_state['destination']}")
                 logging.info(f"Arrived at destination: {player_state['destination']}")
+
+            # 큰 방향 오류 시 재회전
+            elif abs(angle_diff_deg) > ROTATION_THRESHOLD_DEG :
+                player_state["state"] = "ROTATING"
+                player_state["rotation_start_time"] = time.time()
+                control = "A" if cross >= 1 else "D"
+                weight  = calculate_rotation_weight(angle_diff_deg)
             else:
-                fx, fz = math.cos(current_angle), math.sin(current_angle)
-                tx, tz = dx - px, dz - pz
-                dist = math.hypot(tx, tz)
-                if dist > 1e-6:
-                    tx /= dist
-                    tz /= dist
-                dot = max(-1.0, min(1.0, fx*tx + fz*tz))
-                angle_diff_rad = math.acos(dot)
-                angle_diff_deg = math.degrees(angle_diff_rad)
-                expected_body_x = math.degrees(math.atan2(tz, tx)) % 360
-                angle_diff = (expected_body_x - player_state["body_x"]) % 360
-                if angle_diff > 180:
-                    angle_diff -= 360
-                if angle_diff_deg > 45:
+                control = "W"
+                weight  = calculate_move_weight(distance)
+                # if angle_diff > 180:
+                #     angle_diff -= 360
+                if angle_diff_deg > 30:
+                    print(str(angle_diff_deg))
                     player_state["state"] = "ROTATING"
                     player_state["rotation_start_time"] = current_time
                     control = "A" if angle_diff > 0 else "D"
@@ -695,6 +715,16 @@ def info():
                 else:
                     control = "W"
                     weight = calculate_move_weight(distance)
+                    for obstacle in obstacles:
+                        obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
+                        obs_distance = math.hypot(obs_center[0] - px, obs_center[1] - pz)
+                        if obs_distance < DETECTION_RANGE:
+                            detection = asyncio.run(analyze_obstacle(obstacle, 0))
+                            if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
+                                weight *= 0.5
+                                print(f"🚗 Slowing down: Enemy at {obs_center}, distance={obs_distance:.2f}m, new_weight={weight:.2f}")
+                                logging.info(f"Slowing down: Enemy at {obs_center}, distance={obs_distance:.2f}m, new_weight={weight:.2f}")
+                                break
                     print(f"🚗 MOVING: control={control}, weight={weight:.2f}, angle_diff={angle_diff_deg:.2f}°")
                     logging.info(f"MOVING: control={control}, weight={weight:.2f}, angle_diff={angle_diff_deg:.2f}°")
 
@@ -705,10 +735,13 @@ def info():
             logging.info("STOPPED")
 
         player_state["last_position"] = player_state["position"]
-
+    
     response = {"status": "success", "control": control, "weight": weight}
-    if expected_body_x is not None:
-        response["expected_body_x"] = expected_body_x
+    player_state["response"] = response
+    player_state["last_control"] = control
+    player_state["last_weight"] = weight
+    # if expected_body_x is not None:
+    #     response["expected_body_x"] = expected_body_x
     return jsonify(response)
 
 @app.route('/update_position', methods=['POST'])
@@ -749,18 +782,29 @@ def update_position():
 
 @app.route('/get_move', methods=['GET'])
 def get_move():
-    with state_lock:
-        if player_state["state"] == "STOPPED":
-            return jsonify({"move": "STOP", "weight": 0.0})
-        elif player_state["state"] == "MOVING":
-            weight = calculate_move_weight(player_state["distance_to_destination"])
-            return jsonify({"move": "W", "weight": weight})
-        elif player_state["state"] in ["ROTATING", "ESCAPING"]:
-            return jsonify({"move": "A", "weight": 0.3})
-        elif player_state["state"] == "PAUSE":
-            return jsonify({"move": "STOP", "weight": 0.0})
-        else:
-            return jsonify({"move": "STOP", "weight": 0.0})
+    # with state_lock:
+    #     if player_state["state"] == "STOPPED":
+    #         return jsonify({"move": "STOP", "weight": 0.0})
+    #     elif player_state["state"] == "MOVING":
+    #         weight = calculate_move_weight(player_state["distance_to_destination"])
+    #         for obstacle in obstacles:
+    #             obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
+    #             obs_distance = math.hypot(obs_center[0] - player_state["position"][0], obs_center[1] - player_state["position"][1])
+    #             if obs_distance < DETECTION_RANGE:
+    #                 detection = asyncio.run(analyze_obstacle(obstacle, 0))
+    #                 if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
+    #                     weight *= 0.5
+    #                     print(f"🚗 Slowing down in get_move: Enemy at {obs_center}, distance={obs_distance:.2f}m, new_weight={weight:.2f}")
+    #                     logging.info(f"Slowing down in get_move: Enemy at {obs_center}, distance={obs_distance:.2f}m, new_weight={weight:.2f}")
+    #                     break
+    #         return jsonify({"move": "W", "weight": weight})
+    #     elif player_state["state"] in ["ROTATING", "ESCAPING"]:
+    #         return jsonify({"move":str(player_state['last_control']), "weight": str(player_state['last_weight'])})
+    #     elif player_state["state"] == "PAUSE":
+    #         return jsonify({"move": "STOP", "weight": 0.0})
+    #     else:
+    #         return jsonify({"move": "STOP", "weight": 0.0})
+    return jsonify(move=player_state["last_control"], weight=player_state["last_weight"])
 
 @app.route('/get_action', methods=['GET'])
 def get_action():

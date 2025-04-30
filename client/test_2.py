@@ -119,10 +119,10 @@ ROTATION_TIMEOUT = 2.0
 PAUSE_DURATION = 3.0    
 WEIGHT_LEVELS = [1.0, 0.6, 0.3, 0.1, 0.05, 0.01]
 DETECTION_RANGE = 100.0
-ENEMY_CLASSES = {'car002', 'car003', 'enemy'}
+ENEMY_CLASSES = {'car002', 'car003', 'tank', 'enemy'}
 FRIENDLY_CLASSES = {'car005'}
 OBSTACLE_CLASSES = {'rock1', 'rock2', 'wall1', 'wall2', 'human1'}
-CONFIDENCE_THRESHOLD = 0.7
+CONFIDENCE_THRESHOLD = 0.5
 TRAPPED_TIMEOUT = 1.0
 ESCAPE_ROTATION_ANGLE = 90.0
 SHOTS_PER_ENEMY = 1
@@ -130,12 +130,15 @@ SHOT_INTERVAL = 1.0
 ENEMY_PAUSE_DURATION = 3.0  # 적 발견 시 3초 대기
 
 def select_weight(value, levels=WEIGHT_LEVELS):
+    print("select_weight called with value:", value)
     return min(levels, key=lambda x: abs(x - value))
 
 def calculate_move_weight(distance):
+    print("calculate_move_weight called with distance:", distance)
     return select_weight(1.0)
 
 def calculate_rotation_weight(angle_diff_deg):
+    print("calculate_rotation_weight called with angle_diff_deg:", angle_diff_deg)
     abs_deg = abs(angle_diff_deg)
     if abs_deg < ROTATION_THRESHOLD_DEG:
         return 0.0
@@ -143,57 +146,81 @@ def calculate_rotation_weight(angle_diff_deg):
     return select_weight(target_weight)
 
 async def analyze_obstacle(obstacle, index):
+    print("analyze_obstacle called")
     x_center = (obstacle["x_min"] + obstacle["x_max"]) / 2
     z_center = (obstacle["z_min"] + obstacle["z_max"]) / 2
     image_data = obstacle.get("image")
-    target_classes = {0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
+
+    target_classes = {
+        0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1',
+        4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'
+    }
+
     class_name = 'unknown'
     confidence = 0.0
 
     if not image_data:
-        print(f"🔍 YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
-        logging.info(f"🔍YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
+        # print(f"🔍 YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
+        logging.info(f"YOLO: No image, classified as unknown at ({x_center:.2f}, {z_center:.2f})")
         return {"className": class_name, "position": (x_center, z_center), "confidence": confidence}
 
     try:
         image_bytes = base64.b64decode(image_data)
-        image = Image.open(BytesIO(image_bytes))
+        image = Image.open(BytesIO(image_bytes)).convert("RGB")
+        cv_image = np.array(image)
+        cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2BGR)
+
         results = model.predict(image, verbose=False)
-        detections = results[0].boxes.data.cpu().numpy()
+
+        if len(results) > 0 and hasattr(results[0], 'boxes') and results[0].boxes is not None:
+            detections = results[0].boxes.data.cpu().numpy()
+        else:
+            detections = np.array([])
+
+        # print(f"🔍 Raw YOLO detections: {detections}")
+
         filtered_results = [
-            {'className': target_classes[int(box[5])], 'confidence': float(box[4])}
+            {'className': target_classes[int(box[5])], 'confidence': float(box[4]), 'bbox': box[:4]}
             for box in detections if int(box[5]) in target_classes
         ]
+
         if filtered_results:
             detection = max(filtered_results, key=lambda x: x['confidence'])
             class_name = detection['className']
             confidence = detection['confidence']
-            print(f"🔍 YOLO: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
+            bbox = detection['bbox']
+            x1, y1, x2, y2 = map(int, bbox)
+            label = f"{class_name} {confidence:.2f}"
+
+            # print(f"🔍 YOLO: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
             logging.info(f"YOLO: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
         else:
-            print(f"🔍 YOLO: No valid detections at ({x_center:.2f}, {z_center:.2f})")
+            # print(f"🔍 YOLO: No valid detections at ({x_center:.2f}, {z_center:.2f})")
             logging.info(f"YOLO: No valid detections at ({x_center:.2f}, {z_center:.2f})")
-    except Exception as e:
-        print(f"🔍 YOLO failed: {e}")
-        logging.error(f"YOLO failed: {e}")
-        class_name = 'unknown'
 
+    except Exception as e:
+        # print(f"🔍 YOLO failed: {e}")
+        logging.error(f"YOLO failed: {e}")
+        detections = np.array([])
+    
+    # 탐지 결과별 추가 출력
     if class_name in ENEMY_CLASSES and confidence >= CONFIDENCE_THRESHOLD:
-        print(f"🔫 Enemy detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
+        # print(f"🔫 Enemy detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
         logging.info(f"Enemy detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
     elif class_name in FRIENDLY_CLASSES:
-        print(f"🤝 Friendly detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
+        # print(f"🤝 Friendly detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
         logging.info(f"Friendly detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
     elif class_name in OBSTACLE_CLASSES:
-        print(f"🪨 Obstacle detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
+        # print(f"🪨 Obstacle detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
         logging.info(f"Obstacle detected: {class_name} at ({x_center:.2f}, {z_center:.2f}), confidence={confidence:.2f}")
     else:
-        print(f"❓ Unknown object at ({x_center:.2f}, {z_center:.2f}), class={class_name}")
+        # print(f"❓ Unknown object at ({x_center:.2f}, {z_center:.2f}), class={class_name}")
         logging.info(f"Unknown object at ({x_center:.2f}, {z_center:.2f}), class={class_name}")
 
     return {"className": class_name, "position": (x_center, z_center), "confidence": confidence}
 
 async def shoot_at_target(target_pos):
+    print("shoot_at_target called")
     with state_lock:
         current_time = asyncio.get_event_loop().time()
         player_state["last_shot_time"] = current_time - player_state["shot_cooldown"]
@@ -204,29 +231,30 @@ async def shoot_at_target(target_pos):
                 response = requests.post('http://localhost:5000/update_bullet', json=bullet_data, timeout=5)
                 if response.status_code == 200:
                     player_state["shots_fired"] += 1
-                    print(f"🔫 Shot #{player_state['shots_fired']} fired at {target_pos}")
+                    # print(f"🔫 Shot #{player_state['shots_fired']} fired at {target_pos}")
                     logging.info(f"Shot #{player_state['shots_fired']} fired at {target_pos}")
                     return bullet_data
                 else:
-                    print(f"🔫 Shot failed: HTTP {response.status_code}")
+                    # print(f"🔫 Shot failed: HTTP {response.status_code}")
                     logging.error(f"Shot failed: HTTP {response.status_code}")
             except requests.RequestException as e:
-                print(f"🔫 Shot failed, attempt {attempt+1}: {e}")
+                # print(f"🔫 Shot failed, attempt {attempt+1}: {e}")
                 logging.error(f"Shot failed, attempt {attempt+1}: {e}")
-        print(f"🔫 Shot failed: All attempts failed")
+        # print(f"🔫 Shot failed: All attempts failed")
         logging.error(f"Shot failed: All attempts failed")
         return None
 
 def a_star(start, goal, grid):
     def heuristic(node, goal_node):
+        print("heuristic called")
         return math.sqrt((node.x - goal_node.x) ** 2 + (node.z - goal_node.z) ** 2)
 
     if not (0 <= start[0] < grid.width and 0 <= start[1] < grid.height):
-        print(f"🚫 A* failed: Invalid start {start}")
+        # print(f"🚫 A* failed: Invalid start {start}")
         logging.error(f"A* failed: Invalid start {start}")
         return []
     if not (0 <= goal[0] < grid.width and 0 <= goal[1] < grid.height):
-        print(f"🚫 A* failed: Invalid goal {goal}")
+        # print(f"🚫 A* failed: Invalid goal {goal}")
         logging.error(f"A* failed: Invalid goal {goal}")
         return []
 
@@ -234,11 +262,11 @@ def a_star(start, goal, grid):
     goal_node = grid.node_from_world_point(goal[0], goal[1])
 
     if start_node.is_obstacle:
-        print(f"🚫 A* failed: Start is obstacle at ({start_node.x}, {start_node.z})")
+        # print(f"🚫 A* failed: Start is obstacle at ({start_node.x}, {start_node.z})")
         logging.error(f"A* failed: Start is obstacle at ({start_node.x}, {start_node.z})")
         return []
     if goal_node.is_obstacle:
-        print(f"🚫 A* failed: Goal is obstacle at ({goal_node.x}, {goal_node.z})")
+        # print(f"🚫 A* failed: Goal is obstacle at ({goal_node.x}, {goal_node.z})")
         logging.error(f"A* failed: Goal is obstacle at ({goal_node.x}, {goal_node.z})")
         return []
 
@@ -258,7 +286,7 @@ def a_star(start, goal, grid):
                 current = came_from[current]
             path.append((start_node.x, start_node.z))
             path.reverse()
-            print(f"🛤️ A* path: {path}")
+            #print(f"🛤️ A* path: {path}")
             logging.info(f"A* path: {path}")
             return path
         for neighbor in grid.get_neighbors(current):
@@ -269,13 +297,14 @@ def a_star(start, goal, grid):
                 f_score[neighbor] = tentative_g_score + heuristic(neighbor, goal_node)
                 counter += 1
                 heapq.heappush(open_set, (f_score[neighbor], tentative_g_score, counter, neighbor))
-    print(f"🚫 A* failed: No path from ({start_node.x}, {start_node.z}) to ({goal_node.x}, {goal_node.z})")
+    # print(f"🚫 A* failed: No path from ({start_node.x}, {start_node.z}) to ({goal_node.x}, {goal_node.z})")
     logging.error(f"A* failed: No path from ({start_node.x}, {start_node.z}) to ({goal_node.x}, {goal_node.z})")
     return []
 
 async def move_towards_destination():
+    print("move_towards_destination called")
     global obstacles, grid
-    print("🚀 Starting move_towards_destination")
+    # print("🚀 Starting move_towards_destination")
     logging.info("Starting move_towards_destination")
     attempt = 0
     max_attempts = 3
@@ -292,7 +321,7 @@ async def move_towards_destination():
                 player_state["last_move_time"] = current_time
                 player_state["last_move_position"] = current_pos
         distance = math.hypot(dest[0] - current_pos[0], dest[1] - current_pos[1])
-        print(f"🚗 Pos={current_pos}, Dest={dest}, Distance={distance:.2f}, State={state}, BodyX={body_x:.2f}")
+        # print(f"🚗 Pos={current_pos}, Dest={dest}, Distance={distance:.2f}, State={state}, BodyX={body_x:.2f}")
         logging.info(f"Pos={current_pos}, Dest={dest}, Distance={distance:.2f}, State={state}, BodyX={body_x:.2f}")
 
         # 목적지 근처 적 확인
@@ -304,17 +333,17 @@ async def move_towards_destination():
                 detection = await analyze_obstacle(obstacle, idx)
                 if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
                     enemy_at_destination = True
-                    print(f"🔫 Enemy at destination: {detection['className']} at {obs_center}, stopping at range")
+                    # print(f"🔫 Enemy at destination: {detection['className']} at {obs_center}, stopping at range")
                     logging.info(f"Enemy at destination: {detection['className']} at {obs_center}, stopping at range")
                     if distance <= DETECTION_RANGE:
                         with state_lock:
                             player_state["state"] = "PAUSE"
                             player_state["pause_start_time"] = current_time
-                        print(f"⏸ Pausing for {ENEMY_PAUSE_DURATION}s before firing at destination enemy")
+                        # print(f"⏸ Pausing for {ENEMY_PAUSE_DURATION}s before firing at destination enemy")
                         logging.info(f"Pausing for {ENEMY_PAUSE_DURATION}s before firing at destination enemy")
                         await asyncio.sleep(ENEMY_PAUSE_DURATION)
                         await shoot_at_target(obs_center)
-                        print(f"🔫 Fired at destination enemy, re-planning path")
+                        # print(f"🔫 Fired at destination enemy, re-planning path")
                         logging.info(f"Fired at destination enemy, re-planning path")
                         grid = Grid()  # 그리드 초기화
                         for obs in obstacles:
@@ -340,7 +369,7 @@ async def move_towards_destination():
                 player_state["destination"] = None
                 player_state["last_move_time"] = None
                 player_state["last_move_position"] = None
-            print(f"🎉 Arrived at destination: {dest}")
+            # print(f"🎉 Arrived at destination: {dest}")
             logging.info(f"Arrived at destination: {dest}")
             break
 
@@ -350,6 +379,49 @@ async def move_towards_destination():
 
         # 갇힘 감지
         if state == "MOVING":
+            enemy_found = False
+            enemy_position = None
+
+        for idx, obstacle in enumerate(obstacles):
+            obs_center = ((obstacle["x_min"] + obstacle["x_max"]) / 2, (obstacle["z_min"] + obstacle["z_max"]) / 2)
+            obs_distance = math.hypot(obs_center[0] - current_pos[0], obs_center[1] - current_pos[1])
+            # 거리 초과여서 적탐지가 무시됏는지 확인
+            # print(f"🛰Player position: {current_pos}") 
+            # print(f"🛰Obstacle center: {obs_center}")
+            # print(f"🛰Distance to obstacle: {obs_distance:.2f}")
+
+            if obs_distance < DETECTION_RANGE:
+                detection = await analyze_obstacle(obstacle, idx)
+    
+                # print(f"🧩 Detected object: {detection['className']} with confidence {detection['confidence']:.2f}")
+
+                if detection["className"] in ENEMY_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
+                    enemy_found = True
+                    enemy_position = obs_center
+                    break
+        #Pause 상태에서 적 발견 시 포격
+        if enemy_found:
+            with state_lock:
+                player_state["state"] = "PAUSE"
+                player_state["pause_start_time"] = current_time
+            print(f"⏸ Enemy nearby, pausing for {ENEMY_PAUSE_DURATION}s and firing")
+            logging.info(f"Enemy nearby, pausing for {ENEMY_PAUSE_DURATION}s and firing")
+            await asyncio.sleep(ENEMY_PAUSE_DURATION)
+            await shoot_at_target(enemy_position)
+            # print("🔫 Shot fired at detected enemy, re-planning path")
+            logging.info("Shot fired at detected enemy, re-planning path")
+
+            grid = Grid()
+            for obs in obstacles:
+                det = await analyze_obstacle(obs, 0)
+                if det["className"] in OBSTACLE_CLASSES:
+                    grid.set_obstacle(
+                        obs["x_min"], obs["x_max"],
+                        obs["z_min"], obs["z_max"],
+                        start_pos=current_pos, goal_pos=dest
+                    )
+            await asyncio.sleep(0.2)
+
             move_distance = math.hypot(current_pos[0] - player_state["last_move_position"][0],
                                       current_pos[1] - player_state["last_move_position"][1])
             if current_time - player_state["last_move_time"] > TRAPPED_TIMEOUT and move_distance < 0.5:
@@ -359,8 +431,8 @@ async def move_towards_destination():
                     player_state["escape_start_time"] = current_time
                     player_state["last_move_time"] = current_time
                     player_state["last_move_position"] = current_pos
-                print(f"🚫 Trapped detected: No movement for {TRAPPED_TIMEOUT}s at {current_pos}")
-                print(f"🔄 Starting ESCAPING: Rotating to {player_state['escape_rotation_target']:.2f}°")
+                # print(f"🚫 Trapped detected: No movement for {TRAPPED_TIMEOUT}s at {current_pos}")
+                # print(f"🔄 Starting ESCAPING: Rotating to {player_state['escape_rotation_target']:.2f}°")
                 logging.info(f"Trapped detected: No movement for {TRAPPED_TIMEOUT}s at {current_pos}")
                 logging.info(f"Starting ESCAPING: Rotating to {player_state['escape_rotation_target']:.2f}°")
                 await asyncio.sleep(0.2)
@@ -369,7 +441,7 @@ async def move_towards_destination():
         # 경로 계산
         path = a_star(current_pos, dest, grid)
         if not path:
-            print(f"🚫 A* failed, attempt {attempt+1}/{max_attempts}")
+            # print(f"🚫 A* failed, attempt {attempt+1}/{max_attempts}")
             logging.error(f"A* failed, attempt {attempt+1}/{max_attempts}")
             attempt += 1
             if attempt >= max_attempts:
@@ -384,10 +456,10 @@ async def move_towards_destination():
                             player_state["position"] = (next_x, next_z)
                             player_state["last_move_time"] = current_time
                             player_state["last_move_position"] = (next_x, next_z)
-                        print(f"🚗 Fallback: Moved to ({next_x:.2f}, {next_z:.2f})")
+                        # print(f"🚗 Fallback: Moved to ({next_x:.2f}, {next_z:.2f})")
                         logging.info(f"Fallback: Moved to ({next_x:.2f}, {next_z:.2f})")
                     else:
-                        print(f"🚫 Fallback: Collision at ({next_x:.2f}, {next_z:.2f})")
+                        # print(f"🚫 Fallback: Collision at ({next_x:.2f}, {next_z:.2f})")
                         logging.error(f"Fallback: Collision at ({next_x:.2f}, {next_z:.2f})")
                         with state_lock:
                             player_state["state"] = "STOPPED"
@@ -401,7 +473,7 @@ async def move_towards_destination():
                         player_state["destination"] = None
                         player_state["last_move_time"] = None
                         player_state["last_move_position"] = None
-                    print("🚫 Max attempts reached or too close")
+                    # print("🚫 Max attempts reached or too close")
                     logging.error("Max attempts reached or too close")
                     break
                 await asyncio.sleep(1.0)
@@ -418,7 +490,7 @@ async def move_towards_destination():
             if angle_diff > 180:
                 angle_diff -= 360
             if abs(angle_diff) > 135:
-                print(f"🚫 Skipping waypoint {next_pos}: angle_diff={angle_diff:.2f}°, too far from body_x={body_x:.2f}")
+                # print(f"🚫 Skipping waypoint {next_pos}: angle_diff={angle_diff:.2f}°, too far from body_x={body_x:.2f}")
                 logging.warning(f"Skipping waypoint {next_pos}: angle_diff={angle_diff:.2f}°, too far from body_x={body_x:.2f}")
                 await asyncio.sleep(0.2)
                 continue
@@ -426,7 +498,7 @@ async def move_towards_destination():
             player_state["position"] = next_pos
             player_state["last_move_time"] = current_time
             player_state["last_move_position"] = next_pos
-        print(f"🚗 Moved to waypoint: {next_pos}, angle_to_next={angle_to_next:.2f}°")
+        # print(f"🚗 Moved to waypoint: {next_pos}, angle_to_next={angle_to_next:.2f}°")
         logging.info(f"Moved to waypoint: {next_pos}, angle_to_next={angle_to_next:.2f}°")
 
         if state == "MOVING":
@@ -439,11 +511,11 @@ async def move_towards_destination():
                         with state_lock:
                             player_state["state"] = "PAUSE"
                             player_state["pause_start_time"] = current_time
-                        print(f"⏸ Pausing for {ENEMY_PAUSE_DURATION}s before firing at enemy")
+                        # print(f"⏸ Pausing for {ENEMY_PAUSE_DURATION}s before firing at enemy")
                         logging.info(f"Pausing for {ENEMY_PAUSE_DURATION}s before firing at enemy")
                         await asyncio.sleep(ENEMY_PAUSE_DURATION)
                         await shoot_at_target(obs_center)
-                        print(f"🔫 Fired at enemy, re-planning path")
+                        # print(f"🔫 Fired at enemy, re-planning path")
                         logging.info(f"Fired at enemy, re-planning path")
                         grid = Grid()  # 그리드 초기화
                         for obs in obstacles:
@@ -456,25 +528,27 @@ async def move_towards_destination():
                                 )
                         break
                     elif detection["className"] in OBSTACLE_CLASSES and detection["confidence"] >= CONFIDENCE_THRESHOLD:
-                        print(f"🪨 Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m")
+                        # print(f"🪨 Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m")
                         logging.info(f"Obstacle detected: {detection['className']} at {obs_center}, distance={obs_distance:.2f}m")
                     else:
-                        print(f"🔫 Skipped: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
+                        # print(f"🔫 Skipped: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
                         logging.info(f"Skipped: Not an enemy or low confidence ({detection['className']}, confidence={detection['confidence']:.2f})")
         await asyncio.sleep(0.2)
-    print("🏁 Movement stopped")
+    # print("🏁 Movement stopped")
     logging.info("Movement stopped")
 
 def check_obstacle_collision(x, z, obstacles):
+    print("check_obstacle_collision")
     for obs in obstacles:
         # 1미터 버퍼 적용
         if (obs["x_min"] - 1.0) <= x <= (obs["x_max"] + 1.0) and (obs["z_min"] - 1.0) <= z <= (obs["z_max"] + 1.0):
-            print(f"🚫 Collision at ({x:.2f}, {z:.2f})")
+            # print(f"🚫 Collision at ({x:.2f}, {z:.2f})")
             logging.error(f"Collision at ({x:.2f}, {z:.2f})")
             return True
     return False
 
 def run_async_task():
+    print("run_async_task")
     retries = 3
     for attempt in range(retries):
         try:
@@ -483,7 +557,7 @@ def run_async_task():
             loop.run_until_complete(move_towards_destination())
             break
         except Exception as e:
-            print(f"🚫 Async task failed (attempt {attempt+1}/{retries}): {e}, destination={player_state['destination']}")
+            # print(f"🚫 Async task failed (attempt {attempt+1}/{retries}): {e}, destination={player_state['destination']}")
             logging.error(f"Async task failed (attempt {attempt+1}/{retries}): {e}, destination={player_state['destination']}")
             if attempt < retries - 1:
                 time.sleep(1)
@@ -492,34 +566,41 @@ def run_async_task():
 
 @app.route('/detect', methods=['POST'])
 def detect():
+    print("detect called")
+    """
+    Detect objects in the image using YOLOv8 model.
+    """
     image = request.files.get('image')
-    print(image)
+    # print(image)
     if not image:
-        print("Warning: YOLO: No image")
+        # print("Warning: YOLO: No image")
         logging.error("YOLO: No image")
         return jsonify({"error": "No image received"}), 400
     try:
         image = Image.open(image)
         results = model.predict(image, verbose=False)
         detections = results[0].boxes.data.cpu().numpy()
-        target_classes = {0: 'car002', 1: 'car3', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
+        # print(f'🔍 Raw YOLO: {detections}')
+
+        target_classes = {0: 'car002', 1: 'car003', 2: 'car005', 3: 'human1', 4: 'rock1', 5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'}
         filtered_results = [
             {'className': target_classes[int(box[5])], 'bbox': [float(coord) for coord in box[:4]], 'confidence': float(box[4])}
             for box in detections if int(box[5]) in target_classes
         ]
-        print(f"🔍 YOLO: {len(filtered_results)} detections")
+        # print(f"🔍 YOLO: {len(filtered_results)} detections")
         logging.info(f"YOLO: {len(filtered_results)} detections")
         return jsonify(filtered_results)
     except Exception as e:
-        print(f"🔍 YOLO failed: {e}")
+        # print(f"🔍 YOLO failed: {e}")
         logging.error(f"YOLO failed: {e}")
         return jsonify({"error": "Detection failed"}), 500
 
 @app.route('/info', methods=['POST'])
 def info():
+    print("info called")
     data = request.get_json(force=True)
     if not data:
-        print("🚫 No JSON received")
+        # print("🚫 No JSON received")
         logging.error("No JSON received")
         return jsonify({"error": "No JSON received"}), 400
 
@@ -543,7 +624,7 @@ def info():
                     logging.warning(f"Forced body_x update to {player_state['body_x']:.2f} after delay, expected={target:.2f}")
                 print(f"⚠️ bodyX change too small during {player_state['state']}: ΔbodyX={dbx:.3f}, body_x={body_x:.2f}")
                 logging.warning(f"bodyX change too small during {player_state['state']}: ΔbodyX={dbx:.3f}, body_x={body_x:.2f}")
-            print(f"🔄 ΔbodyX={dbx:.3f}")
+            # print(f"🔄 ΔbodyX={dbx:.3f}")
             logging.info(f"ΔbodyX={dbx:.3f}")
         player_state["last_body_x"] = body_x
 
@@ -552,7 +633,7 @@ def info():
             player_state["state"] = "IDLE"
             player_state["last_move_time"] = None
             player_state["last_move_position"] = None
-        print("🛑 IDLE: No destination")
+        # print("🛑 IDLE: No destination")
         logging.info("IDLE: No destination")
         return jsonify({"status": "success", "control": "STOP", "weight": 0.0})
 
@@ -597,18 +678,18 @@ def info():
             if angle_diff > 180:
                 angle_diff -= 360
             control = "A" if angle_diff > 0 else "D"
-            print(f"🧭 ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
+            # print(f"🧭 ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
             logging.info(f"ROTATING: angle_diff={angle_diff_deg:.2f}°, shortest_angle={angle_diff:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
             logging.warning(f"Client should update body_x to {expected_body_x:.2f}")
             if abs(player_state["body_x"] - expected_body_x) < ROTATION_THRESHOLD_DEG:
                 player_state["state"] = "PAUSE"
                 player_state["pause_start_time"] = current_time
-                print(f"🔄 ROTATING -> PAUSE: body_x={player_state['body_x']:.2f}, expected_body_x={expected_body_x:.2f}")
+                # print(f"🔄 ROTATING -> PAUSE: body_x={player_state['body_x']:.2f}, expected_body_x={expected_body_x:.2f}")
                 logging.info(f"ROTATING -> PAUSE: body_x={player_state['body_x']:.2f}, expected_body_x={expected_body_x:.2f}")
             elif player_state["rotation_start_time"] and (current_time - player_state["rotation_start_time"]) > ROTATION_TIMEOUT:
                 player_state["state"] = "PAUSE"
                 player_state["pause_start_time"] = current_time
-                print("🔄 ROTATING -> PAUSE: timeout")
+                # print("🔄 ROTATING -> PAUSE: timeout")
                 logging.info("ROTATING -> PAUSE: timeout")
             else:
                 weight = calculate_rotation_weight(angle_diff_deg)
@@ -620,7 +701,7 @@ def info():
                 angle_diff -= 360
             control = "A" if angle_diff > 0 else "D"
             angle_diff_deg = abs(angle_diff)
-            print(f"🔄 ESCAPING: angle_diff={angle_diff_deg:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
+            # print(f"🔄 ESCAPING: angle_diff={angle_diff_deg:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
             logging.info(f"ESCAPING: angle_diff={angle_diff_deg:.2f}°, control={control}, expected_body_x={expected_body_x:.2f}")
             logging.warning(f"Client should update body_x to {expected_body_x:.2f}")
             if abs(player_state["body_x"] - expected_body_x) < ROTATION_THRESHOLD_DEG:
@@ -630,8 +711,8 @@ def info():
                 player_state["escape_start_time"] = None
                 global grid
                 grid = Grid()
-                print(f"✅ ESCAPING completed: body_x={player_state['body_x']:.2f}")
-                print(f"🔄 ESCAPING -> PAUSE: body_x={player_state['body_x']:.2f}, expected_body_x={expected_body_x:.2f}")
+                # print(f"✅ ESCAPING completed: body_x={player_state['body_x']:.2f}")
+                # print(f"🔄 ESCAPING -> PAUSE: body_x={player_state['body_x']:.2f}, expected_body_x={expected_body_x:.2f}")
                 logging.info(f"ESCAPING completed: body_x={player_state['body_x']:.2f}")
                 logging.info(f"ESCAPING -> PAUSE: body_x={player_state['body_x']:.2f}, expected_body_x={expected_body_x:.2f}")
             elif player_state["escape_start_time"] and (current_time - player_state["escape_start_time"]) > ROTATION_TIMEOUT:
@@ -640,8 +721,8 @@ def info():
                 player_state["escape_rotation_target"] = None
                 player_state["escape_start_time"] = None
                 grid = Grid()
-                print(f"✅ ESCAPING completed: body_x={player_state['body_x']:.2f} (timeout)")
-                print(f"🔄 ESCAPING -> PAUSE: timeout")
+                #print(f"✅ ESCAPING completed: body_x={player_state['body_x']:.2f} (timeout)")
+                #print(f"🔄 ESCAPING -> PAUSE: timeout")
                 logging.info(f"ESCAPING completed: body_x={player_state['body_x']:.2f} (timeout)")
                 logging.info(f"ESCAPING -> PAUSE: timeout")
             else:
@@ -668,7 +749,7 @@ def info():
                 player_state["destination"] = None
                 player_state["last_move_time"] = None
                 player_state["last_move_position"] = None
-                print(f"🎉 Arrived at destination: {player_state['destination']}")
+                # print(f"🎉 Arrived at destination: {player_state['destination']}")
                 logging.info(f"Arrived at destination: {player_state['destination']}")
             else:
                 fx, fz = math.cos(current_angle), math.sin(current_angle)
@@ -713,16 +794,17 @@ def info():
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
+    print("update_position called")
     data = request.get_json()
     if not data or "position" not in data:
-        print("🚫 Missing position data")
+        # print("🚫 Missing position data")
         logging.error("Missing position data")
         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
     try:
         x, y, z = map(float, data["position"].split(","))
         with state_lock:
             if player_state["last_position"] and math.hypot(x - player_state["last_position"][0], z - player_state["last_position"][1]) > 10.0:
-                print(f"⚠️ Position jump detected: ({player_state['last_position']} -> ({x}, {z}))")
+                # print(f"⚠️ Position jump detected: ({player_state['last_position']} -> ({x}, {z}))")
                 logging.error(f"Position jump detected: ({player_state['last_position']} -> ({x}, {z}))")
                 return jsonify({"status": "ERROR", "message": "Position jump detected"}), 400
             if player_state["destination"]:
@@ -732,23 +814,24 @@ def update_position():
                     player_state["destination"] = None
                     player_state["last_move_time"] = None
                     player_state["last_move_position"] = None
-                    print(f"🎉 Arrived at destination via update_position: {player_state['destination']}")
+                    # print(f"🎉 Arrived at destination via update_position: {player_state['destination']}")
                     logging.info(f"Arrived at destination via update_position: {player_state['destination']}")
             player_state["position"] = (x, z)
             if player_state["last_position"]:
                 dx, dz = x - player_state["last_position"][0], z - player_state["last_position"][1]
-                print(f"📍 Movement: dx={dx:.6f}, dz={dz:.6f}")
+                # print(f"📍 Movement: dx={dx:.6f}, dz={dz:.6f}")
                 logging.info(f"Movement: dx={dx:.6f}, dz={dz:.6f}")
-        print(f"📍 Position: {player_state['position']}")
+        # print(f"📍 Position: {player_state['position']}")
         logging.info(f"Position: {player_state['position']}")
         return jsonify({"status": "OK", "current_position": player_state["position"]})
     except Exception as e:
-        print(f"🚫 Update position failed: {e}")
+        # print(f"🚫 Update position failed: {e}")
         logging.error(f"Update position failed: {e}")
         return jsonify({"status": "ERROR", "message": str(e)}), 400
 
 @app.route('/get_move', methods=['GET'])
 def get_move():
+    print("get_move called")
     with state_lock:
         if player_state["state"] == "STOPPED":
             return jsonify({"move": "STOP", "weight": 0.0})
@@ -756,7 +839,7 @@ def get_move():
             weight = calculate_move_weight(player_state["distance_to_destination"])
             return jsonify({"move": "W", "weight": weight})
         elif player_state["state"] in ["ROTATING", "ESCAPING"]:
-            return jsonify({"move": "A", "weight": 0.3})
+            return jsonify({"move": "A", "weight": 0.5})
         elif player_state["state"] == "PAUSE":
             return jsonify({"move": "STOP", "weight": 0.0})
         else:
@@ -764,38 +847,41 @@ def get_move():
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
+    # print("get_action called")
     with state_lock:
         if player_state["enemy_detected"] and player_state["state"] == "MOVING":
-            print(f"🔫 FIRE: target={player_state['last_shot_target']}")
+            # print(f"🔫 FIRE: target={player_state['last_shot_target']}")
             logging.info(f"FIRE: target={player_state['last_shot_target']}")
             player_state["enemy_detected"] = False
             return jsonify({"turret": "FIRE", "weight": 1.0})
-        print("🔫 No enemy detected or not in MOVING state")
+        # print("🔫 No enemy detected or not in MOVING state")
         logging.info("No enemy detected or not in MOVING state")
         return jsonify({"turret": "", "weight": 0.0})
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
+    print("update_bullet called")
     data = request.get_json()
     if not data:
-        print("🚫 Invalid bullet data")
+        # print("🚫 Invalid bullet data")
         logging.error("Invalid bullet data")
         return jsonify({"status": "ERROR", "message": "Invalid request data"}), 400
-    print(f"💥 Bullet: X={data.get('x')}, Y={data.get('y')}, Z={data.get('z')}, Target={data.get('hit')}")
+    # print(f"💥 Bullet: X={data.get('x')}, Y={data.get('y')}, Z={data.get('z')}, Target={data.get('hit')}")
     logging.info(f"Bullet: X={data.get('x')}, Y={data.get('y')}, Z={data.get('z')}, Target={data.get('hit')}")
     return jsonify({"status": "OK", "message": "Bullet impact data received"})
 
 @app.route('/set_destination', methods=['POST'])
 def set_destination():
+    print("set_destination called")
     data = request.get_json()
     if not data or "destination" not in data:
-        print("🚫 Missing destination data")
+        # print("🚫 Missing destination data")
         logging.error("Missing destination data")
         return jsonify({"status": "ERROR", "message": "Missing destination data"}), 400
     try:
         x, y, z = map(float, data["destination"].split(","))
         if not (0 <= x < grid.width and 0 <= z < grid.height):
-            print(f"🚫 Destination ({x}, {z}) out of bounds")
+            # print(f"🚫 Destination ({x}, {z}) out of bounds")
             logging.error(f"Destination ({x}, {z}) out of bounds")
             return jsonify({"status": "ERROR", "message": f"Destination ({x}, {z}) out of bounds"}), 400
         with state_lock:
@@ -805,20 +891,21 @@ def set_destination():
             player_state["last_valid_angle"] = None
             player_state["last_move_time"] = None
             player_state["last_move_position"] = None
-        print(f"🎯 Destination: ({x}, {z})")
+        # print(f"🎯 Destination: ({x}, {z})")
         logging.info(f"Destination: ({x}, {z})")
         return jsonify({"status": "OK", "destination": {"x": x, "y": y, "z": z}})
     except Exception as e:
-        print(f"🚫 Set destination failed: {e}")
+        # print(f"🚫 Set destination failed: {e}")
         logging.error(f"Set destination failed: {e}")
         return jsonify({"status": "ERROR", "message": str(e)}), 400
 
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
+    print("update_obstacle called")
     global obstacles, grid
     data = request.get_json()
     if not data:
-        print("🚫 No obstacle data received")
+        # print("🚫 No obstacle data received")
         logging.error("No obstacle data received")
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
     obstacles = data.get('obstacles', [])
@@ -834,12 +921,13 @@ def update_obstacle():
                 obstacle["z_min"], obstacle["z_max"],
                 start_pos=start_pos, goal_pos=goal_pos
             )
-    print(f"🪨 Obstacles: {len(obstacles)}")
+    # print(f"🪨 Obstacles: {len(obstacles)}")
     logging.info(f"Obstacles: {len(obstacles)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received'})
 
 @app.route('/init', methods=['GET'])
 def init():
+    print("init called")
     with state_lock:
         player_state["state"] = "IDLE"
         player_state["destination"] = None
@@ -865,13 +953,13 @@ def init():
         "rdStartY": 10,
         "rdStartZ": 280
     }
-    print("🛠️ Initialized")
+    # print("🛠️ Initialized")
     logging.info("Initialized")
     return jsonify(config)
 
 @app.route('/start', methods=['GET'])
 def start():
-    print("🚀 Start")
+    print("🚀 Start called")
     logging.info("Start")
     return jsonify({"control": ""})
 
