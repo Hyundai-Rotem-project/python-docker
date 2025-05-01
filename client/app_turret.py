@@ -8,7 +8,7 @@ import time
 import modules.turret as turret
 
 app = Flask(__name__)
-model = YOLO('yolov8n.pt')
+model = YOLO('best.pt')
 socketio = SocketIO(app)
 
 # Move commands with weights (11+ variations)
@@ -48,7 +48,10 @@ def detect():
 
 
     # 3. 결과 필터링 및 변환
-    target_classes = {0: "person", 2: "car", 7: "truck", 15: "rock"}
+    target_classes = {
+        0: 'car002', 1: 'car003', 2: 'car005', 3: 'human001',
+        4: 'rock001', 5: 'rock2', 6: 'tank', 7: 'wall001', 8: 'wall002'
+    }
     filtered_results = []
     for box in detections:
         class_id = int(box[5])

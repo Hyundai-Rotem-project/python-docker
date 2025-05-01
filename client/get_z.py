@@ -8,7 +8,7 @@ import logging
 import json
 
 app = Flask(__name__)
-model = YOLO('yolov8n.pt')
+model = YOLO('best.pt')
 
 # 로깅 설정
 logging.basicConfig(filename='tank.log', level=logging.INFO, format='%(asctime)s - %(message)s')
