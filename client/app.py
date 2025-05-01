@@ -6,9 +6,12 @@ import torch
 from ultralytics import YOLO
 import time
 import modules.turret as turret
+import cv2
+import numpy as np
+import time
 
 app = Flask(__name__)
-model = YOLO('yolov8n.pt')
+model = YOLO('best.pt')
 socketio = SocketIO(app)
 
 # Move commands with weights (11+ variations)
@@ -159,7 +162,7 @@ def update_bullet():
         print('is_hit >> action_command????', action_command)
     else: 
         print("Hit!!!!!")
-        action_command = turret.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_y'])
+        action_command = turret.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_x'], player_data['body_y'])
     
     print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
     
@@ -198,7 +201,12 @@ def update_obstacle():
     if not data:
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
-    print("🪨 Obstacle Data:", data)
+    # obstacles = []
+    # for d in data['obstacles']:
+    #     x = round((d['x_min'] + d['x_max'])/2, 2) 
+    #     z = round((d['z_min'] + d['z_max'])/2, 2) 
+    #     obstacles.append((x, z))
+    # print("🪨 Obstacle Data:", obstacles)
     return jsonify({'status': 'success', 'message': 'Obstacle data received'})
 
 #Endpoint called when the episode starts
