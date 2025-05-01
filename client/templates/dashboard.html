@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>YOLO Detection Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .stat-box {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            margin: 20px;
+            max-width: 800px;
+        }
+        .impact-log {
+            height: 500px;  /* 로그 창 높이 증가 */
+            overflow-y: auto;
+            font-family: monospace;
+            background-color: #2b2b2b;
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .impact-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #444;
+        }
+        .hit {
+            color: #4CAF50;
+        }
+        .miss {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <h1>Battle Log Dashboard</h1>
+    <div class="stat-box">
+        <h2>Bullet Impact Log</h2>
+        <div id="impact-log" class="impact-log"></div>
+    </div>
+
+    <div class="stat-box">
+        <h2>Rotation Test</h2>
+        <div class="command-input">
+            <select id="rotation-type">
+                <option value="Q">Left (Q)</option>
+                <option value="E">Right (E)</option>
+                <option value="R">Up (R)</option>
+                <option value="F">Down (F)</option>
+            </select>
+            <input type="number" id="rotation-count" value="1" min="1" max="10" style="width: 60px;">
+            <button onclick="testRotation()">Test Rotation</button>
+        </div>
+        <div class="rotation-info">
+            <p>Left/Right (Q/E): Horizontal rotation</p>
+            <p>Up/Down (R/F): Vertical rotation</p>
+        </div>
+        <div id="rotation-log" class="impact-log"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        const impactLog = document.getElementById('impact-log');
+        const rotationLog = document.getElementById('rotation-log');
+        
+        socket.on('bullet_impact', function(data) {
+            const entry = document.createElement('div');
+            entry.className = 'impact-entry';
+            entry.innerHTML = `
+                [${data.timestamp}] Impact at (${data.x.toFixed(2)}, ${data.y.toFixed(2)}, ${data.z.toFixed(2)}) 
+                - ${data.target}
+            `;
+            
+            impactLog.insertBefore(entry, impactLog.firstChild);
+            
+            if (impactLog.children.length > 100) {
+                impactLog.removeChild(impactLog.lastChild);
+            }
+        });
+
+        socket.on('rotation_test', function(data) {
+            const entry = document.createElement('div');
+            entry.className = 'impact-entry';
+            entry.innerHTML = `
+                [${data.timestamp}] ${data.rotation_desc} rotation (${data.rotation_type}) x ${data.count}
+            `;
+            
+            rotationLog.insertBefore(entry, rotationLog.firstChild);
+            
+            if (rotationLog.children.length > 100) {
+                rotationLog.removeChild(rotationLog.lastChild);
+            }
+        });
+
+        function testRotation() {
+            const rotationType = document.getElementById('rotation-type').value;
+            const rotationCount = parseInt(document.getElementById('rotation-count').value);
+            
+            fetch('/test_rotation', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    type: rotationType,
+                    count: rotationCount
+                })
+            });
+        }
+    </script>
+</body>
+</html>
