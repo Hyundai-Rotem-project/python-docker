@@ -16,6 +16,8 @@ logging.basicConfig(filename='tank.log', level=logging.INFO, format='%(asctime)s
 # 전역 변수
 player_position = None  # 아군 전차 위치 (x, z)
 obstacles = []  # 장애물 리스트
+latest_nearest_enemy = None  # 가장 가까운 적
+latest_nearest_obstacle = None  # 가장 가까운 장애물
 
 # Move commands with weights (11+ variations)
 move_command = [
@@ -119,7 +121,7 @@ def find_nearest_obstacle_to_enemy(detections, player_pos, obstacles):
 
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_position, obstacles
+    global player_position, obstacles, latest_nearest_enemy, latest_nearest_obstacle
     image = request.files.get('image')
     if not image:
         logging.error("No image received")
@@ -148,6 +150,10 @@ def detect():
 
     # 가장 가까운 적과 장애물 찾기
     result = find_nearest_obstacle_to_enemy(filtered_results, player_position, obstacles)
+    
+    # 전역 변수 업데이트
+    latest_nearest_enemy = result['nearest_enemy']
+    latest_nearest_obstacle = result['nearest_obstacle']
     
     # 좌표 출력
     nearest_enemy = result['nearest_enemy']
@@ -186,12 +192,36 @@ def detect():
 
 @app.route('/info', methods=['POST'])
 def info():
+    global latest_nearest_enemy, latest_nearest_obstacle
     data = request.get_json(force=True)
 
     if not data:
         logging.error("No JSON received")
         print("🚫 No JSON received")
         return jsonify({"error": "No JSON received"}), 400
+
+    # 가장 가까운 적과 장애물 좌표 출력
+    if latest_nearest_enemy is None or 'message' in latest_nearest_enemy:
+        enemy_log = "Nearest enemy: No enemy detected"
+    else:
+        enemy_log = (
+            f"Nearest enemy coordinates: x={latest_nearest_enemy['x']:.6f}, "
+            f"z={latest_nearest_enemy['z']:.6f}"
+        )
+
+    if latest_nearest_obstacle is None or 'message' in latest_nearest_obstacle:
+        obstacle_log = "Nearest obstacle: No obstacles available"
+    else:
+        obstacle_log = (
+            f"Nearest obstacle coordinates: x_min={latest_nearest_obstacle['x_min']:.6f}, "
+            f"x_max={latest_nearest_obstacle['x_max']:.6f}, z_min={latest_nearest_obstacle['z_min']:.6f}, "
+            f"z_max={latest_nearest_obstacle['z_max']:.6f}"
+        )
+
+    logging.info(enemy_log)
+    logging.info(obstacle_log)
+    print(f"🚀 {enemy_log}")
+    print(f"🚀 {obstacle_log}")
 
     response = {"status": "success", "control": ""}
     return jsonify(response)
