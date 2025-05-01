@@ -3,11 +3,12 @@ import math
 HORIZONTAL_DEGREE_PER_WEIGHT = 21.35  # 수평: Q/E, w=1.0
 VERTICAL_DEGREE_PER_WEIGHT = 2.67    # 수직: R/F, w=1.0
 
-# 사정거리 최대, 최소
-MIN_SHOOTING_RANGE = 21
+# 사정거리 최대
 MAX_SHOOTING_RANGE = 120
 # 타겟의 거리에 따른 포신의 수직 각도 계산을 위한 상수
 PITCH_ESTIMATION_COEFFICIENTS = (-0.0006, 0.2249, -8.6742)
+
+DEBUG = True
 
 def calculate_angle_diff(target_angle, current_angle):
     """ -180 ~ 180 범위의 최소 회전 각도 계산 """
@@ -43,15 +44,15 @@ def get_angles(from_pos, to_pos):
     return flat_distance, yaw, pitch
 
 def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
-    print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
+    if DEBUG: print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
     action_command = []
 
     flat_distance, target_yaw, target_pitch = get_angles(player_pos, target_pos)
 
     if hit_pos is None:
         # 첫 번째 발사
-        if not (MIN_SHOOTING_RANGE <= flat_distance <= MAX_SHOOTING_RANGE):
-            print(f"🤢 [INFO] Target z={flat_distance:.2f} is out of range ({MIN_SHOOTING_RANGE:.2f}~{MAX_SHOOTING_RANGE:.2f}).")
+        if not (flat_distance <= MAX_SHOOTING_RANGE):
+            if DEBUG: print(f"🤢 [INFO] Target z={flat_distance:.2f} is out of range {MAX_SHOOTING_RANGE:.2f}).")
             return action_command
         
         if turret_x_angle is None or turret_y_angle is None or player_y_angle is None:
