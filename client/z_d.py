@@ -160,6 +160,7 @@ def detect():
             f"Nearest enemy coordinates: x={nearest_enemy['x']:.6f}, "
             f"z={nearest_enemy['z']:.6f}"
         )
+
     if 'message' in nearest_obstacle:
         obstacle_log = f"Nearest obstacle: {nearest_obstacle['message']}"
     else:
@@ -186,17 +187,11 @@ def detect():
 @app.route('/info', methods=['POST'])
 def info():
     data = request.get_json(force=True)
-    test = data.copy()
-    test.pop('lidarPoints', None)
-    print('❤️❤️', test)
+
     if not data:
         logging.error("No JSON received")
         print("🚫 No JSON received")
         return jsonify({"error": "No JSON received"}), 400
-
-    # # 디버깅: 수신된 데이터 전체 출력
-    # logging.info(f"Received /info data: {json.dumps(data, indent=2)}")
-    # # print(f"Received /info data: {json.dumps(data, indent=2)}")
 
     response = {"status": "success", "control": ""}
     return jsonify(response)
