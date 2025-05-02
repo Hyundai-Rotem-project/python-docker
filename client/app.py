@@ -1,250 +1,224 @@
-# app.py
-from flask import Flask, request, jsonify
-import math
+from flask import Flask, request, jsonify, render_template
+from flask_socketio import SocketIO
+import requests
+import os
+import torch
+from ultralytics import YOLO
 import time
-import threading
-from modules.grid import Grid
-from modules.detection import detect
-import asyncio
-from modules.movement import run_async_task
-from modules.config import (
-    ROTATION_THRESHOLD_DEG, STOP_DISTANCE, SLOWDOWN_DISTANCE,
-    ROTATION_TIMEOUT, PAUSE_DURATION, WEIGHT_LEVELS, OBSTACLE_CLASSES
-)
+import modules.turret as turret
+import cv2
+import numpy as np
+import time
 
 app = Flask(__name__)
+model = YOLO('best.pt')
+socketio = SocketIO(app)
 
-# 전역 변수
-grid = Grid()
-obstacles = []
-player_state = {
-    "position": (60.0, 27.23),
-    "last_position": None,
-    "destination": None,
-    "state": "IDLE",
-    "distance_to_destination": float("inf"),
-    "last_shot_time": 0.0,
-    "shot_cooldown": 2.0,
-    "body_x": 0.0,
-    "body_y": 0.0,
-    "body_z": 0.0,
-    "last_valid_angle": None,
-    "rotation_start_time": None,
-    "pause_start_time": None,
-    "enemy_detected": False,
-    "last_shot_target": None
-}
-state_lock = threading.Lock()
+# Move commands with weights (11+ variations)
+move_command = []
 
-def select_weight(value, levels=WEIGHT_LEVELS):
-    return min(levels, key=lambda x: abs(x - value))
+# Action commands with weights (15+ variations)
+action_command = []
 
-def calculate_move_weight(distance):
-    if distance <= STOP_DISTANCE:
-        return 0.0
-    elif distance > SLOWDOWN_DISTANCE:
-        return 1.0
-    normalized = (distance - STOP_DISTANCE) / (SLOWDOWN_DISTANCE - STOP_DISTANCE)
-    target_weight = 0.01 + (1.0 - 0.01) * (normalized ** 2)
-    return select_weight(target_weight)
+# info 
+player_data = {}
+# set_destination
+destination = {}
+# update_bullet
+impact_info = {}
 
-def calculate_rotation_weight(angle_diff_deg):
-    abs_deg = abs(angle_diff_deg)
-    if abs_deg < ROTATION_THRESHOLD_DEG:
-        return 0.0
-    target_weight = min(0.3, abs_deg / 45)
-    return select_weight(target_weight)
+@app.route('/dashboard')
+def dashboard():
+    print('🚨 dashboard >>>')
+    return render_template('dashboard.html')
+
+
+@app.route('/detect', methods=['POST'])
+def detect():
+    print('🚨 detect >>>')
+    """Receives an image from the simulator, performs object detection, and returns filtered results."""
+    # 1. 이미지 받기 및 저장
+    image = request.files.get('image')
+    if not image:
+        return jsonify({"error": "No image received"}), 400
+
+    image_path = 'temp_image.jpg'
+    image.save(image_path)
+
+    # 2. YOLO 모델 처리
+    results = model(image_path)
+    detections = results[0].boxes.data.cpu().numpy()
+
+
+    # 3. 결과 필터링 및 변환
+    target_classes = {0: "person", 2: "car", 7: "truck", 15: "rock"}
+    filtered_results = []
+    for box in detections:
+        class_id = int(box[5])
+        if class_id in target_classes:
+            filtered_results.append({
+                'className': target_classes[class_id],
+                'bbox': [float(coord) for coord in box[:4]],
+                'confidence': float(box[4])
+            })
+
+    response = jsonify(filtered_results)
+    return response
 
 @app.route('/info', methods=['POST'])
 def info():
+    # print('🚨 info >>>')
+    global player_data
     data = request.get_json(force=True)
     if not data:
         return jsonify({"error": "No JSON received"}), 400
 
-    with state_lock:
-        player_pos = data.get("playerPos")
-        player_state["body_x"] = data.get("playerBodyX", 0.0)
-        player_state["body_y"] = data.get("playerBodyY", 0.0)
-        player_state["body_z"] = data.get("playerBodyZ", 0.0)
-        player_state["distance_to_destination"] = data.get("distance", float("inf"))
-        player_state["position"] = (player_pos["x"], player_pos["z"])
+    # print("📨 /info data received:", data)
+    
+    player_data = {
+        'pos': {
+            'x': data.get('playerPos', {}).get('x'),
+            'y': data.get('playerPos', {}).get('y'),
+            'z': data.get('playerPos', {}).get('z'),
+        },
+        'turret_x': data.get('playerTurretX'),
+        'turret_y': data.get('playerTurretY'),
+        'body_x': data.get('playerBodyX'),
+        'body_y': data.get('playerBodyY'),
+        'body_z': data.get('playerBodyZ'),
+    }
+    
 
-    if not player_state["destination"]:
-        with state_lock:
-            player_state["state"] = "IDLE"
-        return jsonify({"status": "success", "control": "STOP", "weight": 0.0})
-
-    current_angle = math.radians(player_state["body_x"])
-    with state_lock:
-        if player_state["last_position"] and player_state["position"] != player_state["last_position"]:
-            dx = player_state["position"][0] - player_state["last_position"][0]
-            dz = player_state["position"][1] - player_state["last_position"][1]
-            if math.sqrt(dx**2 + dz**2) > 0.0001:
-                current_angle = math.atan2(dz, dx)
-                player_state["last_valid_angle"] = current_angle
-
-        if player_state["last_valid_angle"] is None and player_state["destination"]:
-            dx, dz = player_state["destination"]
-            px, pz = player_state["position"]
-            player_state["last_valid_angle"] = math.atan2(dz - pz, dx - px)
-
-    control = "STOP"
-    weight = 0.0
-    current_time = time.time()
-
-    with state_lock:
-        if player_state["state"] == "IDLE" and player_state["destination"]:
-            player_state["state"] = "ROTATING"
-            player_state["rotation_start_time"] = current_time
-
-        elif player_state["state"] == "ROTATING":
-            dx, dz = player_state["destination"]
-            px, pz = player_state["position"]
-            target_angle = math.atan2(dz - pz, dx - px)
-            angle_diff = ((target_angle - current_angle + math.pi) % (2 * math.pi)) - math.pi
-            angle_deg = math.degrees(angle_diff)
-
-            if current_time - player_state.get("rotation_start_time", 0) > ROTATION_TIMEOUT:
-                player_state["state"] = "PAUSE"
-                player_state["pause_start_time"] = current_time
-            elif abs(angle_deg) < ROTATION_THRESHOLD_DEG:
-                player_state["state"] = "PAUSE"
-                player_state["pause_start_time"] = current_time
-            else:
-                control = "D" if angle_diff > 0 else "A"
-                weight = calculate_rotation_weight(angle_deg)
-
-        elif player_state["state"] == "PAUSE":
-            if current_time - player_state["pause_start_time"] >= PAUSE_DURATION:
-                player_state["state"] = "MOVING"
-                control = "W"
-                weight = calculate_move_weight(player_state["distance_to_destination"])
-                threading.Thread(target=run_async_task, args=(obstacles, grid, player_state, state_lock), daemon=True).start()
-            else:
-                control = "STOP"
-                weight = 0.0
-
-        elif player_state["state"] == "MOVING":
-            dx, dz = player_state["destination"]
-            px, pz = player_state["position"]
-            angle_diff = ((math.atan2(dz - pz, dx - px) - current_angle + math.pi) % (2 * math.pi)) - math.pi
-            angle_deg = math.degrees(angle_diff)
-
-            if abs(angle_deg) > ROTATION_THRESHOLD_DEG * 6:
-                player_state["state"] = "ROTATING"
-                player_state["rotation_start_time"] = current_time
-                control = "D" if angle_diff > 0 else "A"
-                weight = calculate_rotation_weight(angle_deg)
-            else:
-                control = "W"
-                weight = calculate_move_weight(player_state["distance_to_destination"])
-
-        elif player_state["state"] == "STOPPED":
-            control = "STOP"
-            weight = 0.0
-
-        player_state["last_position"] = player_state["position"]
-
-    return jsonify({"status": "success", "control": control, "weight": weight})
+    # Auto-pause after 15 seconds
+    #if data.get("time", 0) > 15:
+    #    return jsonify({"status": "success", "control": "pause"})
+    # Auto-reset after 15 seconds
+    #if data.get("time", 0) > 15:
+    #    return jsonify({"stsaatus": "success", "control": "reset"})
+    return jsonify({"status": "success", "control": ""})
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
+    print('🚨 update_position >>>')
     data = request.get_json()
     if not data or "position" not in data:
         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
 
     try:
         x, y, z = map(float, data["position"].split(","))
-        with state_lock:
-            player_state["position"] = (x, z)
-        return jsonify({"status": "OK", "current_position": player_state["position"]})
+        current_position = (int(x), int(y), int(z))
+        print(f"📍 Position updated: {current_position}")
+        return jsonify({"status": "OK", "current_position": current_position})
     except Exception as e:
         return jsonify({"status": "ERROR", "message": str(e)}), 400
 
 @app.route('/get_move', methods=['GET'])
 def get_move():
-    with state_lock:
-        if player_state["state"] == "STOPPED":
-            return jsonify({"move": "STOP", "weight": 0.0})
-        elif player_state["state"] == "MOVING":
-            weight = calculate_move_weight(player_state["distance_to_destination"])
-            return jsonify({"move": "W", "weight": weight})
-        elif player_state["state"] == "ROTATING":
-            return jsonify({"move": "A", "weight": 0.3})
-        elif player_state["state"] == "PAUSE":
-            return jsonify({"move": "STOP", "weight": 0.0})
-        else:
-            return jsonify({"move": "STOP", "weight": 0.0})
+    print('🚨 get_move >>>')
+    global move_command
+    if move_command:
+        command = move_command.pop(0)
+        print(f"🚗 Move Command: {command}")
+        return jsonify(command)
+    else:
+        return jsonify({"move": "STOP", "weight": 1.0})
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
-    with state_lock:
-        if player_state["enemy_detected"] or player_state["state"] == "STOPPED":
-            player_state["enemy_detected"] = False
-            print(f"🔫 /get_action: Returning FIRE, target={player_state['last_shot_target']}")
-            return jsonify({"turret": "FIRE", "weight": 1.0})
-        else:
-            print("🔫 /get_action: No enemy detected, no action")
-            return jsonify({"turret": "", "weight": 0.0})
+    global action_command
+    print('🚨 get_action >>>', action_command)
+    if action_command:
+        command = action_command.pop(0)
+        print(f"🔫 Action Command: {command}")
+        return jsonify(command)
+    else:
+        return jsonify({"turret": "", "weight": 0.0})
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
+    global destination
+    global impact_info
+    global player_data
+    global action_command
+    print('🚨 update_bullet >>>')
     data = request.get_json()
+    action_command = []
     if not data:
         return jsonify({"status": "ERROR", "message": "Invalid request data"}), 400
-    print(f"💥 Bullet Impact at X={data.get('x')}, Y={data.get('y')}, Z={data.get('z')}, Target={data.get('hit')}")
+
+    impact_info = {
+        'x': data.get('x'),
+        'y': data.get('y'),
+        'z': data.get('z'),
+        'target': data.get('hit'),  # 'terrain' 또는 다른 타겟 정보
+        'timestamp': time.strftime('%H:%M:%S')
+    }
+    
+    is_hit = turret.is_hit(destination, impact_info)
+    print('💥', is_hit)
+    if not is_hit:
+        time.sleep(5)
+        action_command = turret.get_action_command(player_data['pos'], destination, impact_info)
+        print('is_hit >> action_command????', action_command)
+    else: 
+        print("Hit!!!!!")
+        action_command = turret.get_reverse_action_command(player_data['turret_x'], player_data['turret_y'], player_data['body_x'], player_data['body_y'])
+    
+    print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
+    
+    socketio.emit('bullet_impact', impact_info)
+    
     return jsonify({"status": "OK", "message": "Bullet impact data received"})
 
 @app.route('/set_destination', methods=['POST'])
 def set_destination():
+    print('🚨 set_destination >>>')
+    global destination
+    global action_command
     data = request.get_json()
+    action_command = []
     if not data or "destination" not in data:
         return jsonify({"status": "ERROR", "message": "Missing destination data"}), 400
 
     try:
         x, y, z = map(float, data["destination"].split(","))
-        if not (0 <= x < grid.width and 0 <= z < grid.height):
-            return jsonify({"status": "ERROR", "message": f"Destination ({x}, {z}) out of grid bounds (0-{grid.width}, 0-{grid.height})"}), 400
-        with state_lock:
-            player_state["destination"] = (x, z)
-            player_state["state"] = "ROTATING"
-            player_state["rotation_start_time"] = time.time()
-        print(f"🎯 Destination set to: ({x}, {z})")
+        destination = {
+            'x': x,
+            'y': y,
+            'z': z,
+        }
+        print(f"🎯 destination set to: x={x}, y={y}, z={z}")
+        action_command = turret.get_action_command(player_data['pos'], destination, turret_x_angle=player_data['turret_x'], turret_y_angle=player_data['turret_y'], player_y_angle=player_data['body_y'])
+        print('action_command????', action_command)
         return jsonify({"status": "OK", "destination": {"x": x, "y": y, "z": z}})
-    except ValueError as e:
-        return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
     except Exception as e:
-        return jsonify({"status": "ERROR", "message": f"Error: {str(e)}"}), 400
+        return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
 
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
-    global obstacles, grid
+    print('🚨 update_obstacle >>>')
     data = request.get_json()
     if not data:
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
-    obstacles = data.get('obstacles', [])
-    grid = Grid()
-    for obstacle in obstacles:
-        from detection import analyze_obstacle
-        detection = asyncio.run(analyze_obstacle(obstacle, 0))
-        if detection["className"] in OBSTACLE_CLASSES:
-            grid.set_obstacle(obstacle["x_min"], obstacle["x_max"], obstacle["z_min"], obstacle["z_max"])
-    print("🪨 Obstacle Data:", obstacles)
+    # obstacles = []
+    # for d in data['obstacles']:
+    #     x = round((d['x_min'] + d['x_max'])/2, 2) 
+    #     z = round((d['z_min'] + d['z_max'])/2, 2) 
+    #     obstacles.append((x, z))
+    # print("🪨 Obstacle Data:", obstacles)
     return jsonify({'status': 'success', 'message': 'Obstacle data received'})
 
-@app.route('/detect', methods=['POST'])
-def detect_endpoint():
-    return detect(request.files.get('image'))
-
+#Endpoint called when the episode starts
 @app.route('/init', methods=['GET'])
 def init():
+    print('🚨 init >>>')
     config = {
-        "startMode": "start",
-        "blStartX": 60,
+        "startMode": "start",  # Options: "start" or "pause"
+        "blStartX": 60,  #Blue Start Position
         "blStartY": 10,
-        "blStartZ": 27.23,
-        "rdStartX": 59,
+        "blStartZ": 57,
+        "rdStartX": 60, #Red Start Position
         "rdStartY": 10,
         "rdStartZ": 280
     }
@@ -253,8 +227,42 @@ def init():
 
 @app.route('/start', methods=['GET'])
 def start():
-    print("🚀 /start command received")
+    # print('🚨 start >>>')
+    # print("🚀 /start command received")
     return jsonify({"control": ""})
 
+@app.route('/test_rotation', methods=['POST'])
+def test_rotation():
+    global action_command
+    data = request.get_json()
+    rotation_type = data.get('type', 'Q')  # Q, E, F, R
+    count = data.get('count', 1)  # 회전 명령 횟수
+    
+    # 기존 명령어 초기화 후 새로운 테스트 명령 추가
+    action_command = []  # 기존 명령어 초기화
+    
+    # 회전 명령 추가 (각 명령 사이에 정지 명령 추가)
+    for _ in range(count):
+        action_command.append({"turret": rotation_type, "weight": 0.5})
+    action_command.append({"turret": rotation_type, "weight": 0.0})  # 각 회전 후 정지
+
+    test_info = {
+        'rotation_type': rotation_type,
+        'count': count,
+        'timestamp': time.strftime('%H:%M:%S'),
+        'rotation_desc': {
+            'Q': 'Left',
+            'E': 'Right',
+            'F': 'Down',
+            'R': 'Up'
+        }.get(rotation_type, 'Unknown')
+    }
+    
+    print(f"🔄 Testing {test_info['rotation_desc']} rotation ({rotation_type}) x {count}")
+    socketio.emit('rotation_test', test_info)
+    print("action_command >>", action_command)
+    
+    return jsonify({"status": "OK", "message": "Rotation test started"})
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)
