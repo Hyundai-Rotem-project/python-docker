@@ -53,10 +53,14 @@ def dashboard():
     if DEBUG: print('🚨 dashboard >>>')
     return render_template('dashboard.html')
 
+is_action_start = False
+hit_state = -1
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_data, obstacles, latest_nearest_enemy, action_command, destination
+    global player_data, obstacles, latest_nearest_enemy, action_command, destination, is_action_start, hit_state
     print('🌍 detect >>>')
+    print('🤩🤩is_action_start', is_action_start)
+    print('🤩🤩hit_state', is_action_start)
 
 
     # 1. 이미지 수신
@@ -122,43 +126,26 @@ def detect():
 
     # 가장 가까운 적 찾기
     nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pos, obstacles)
-    fire_coordinates = is_near_enemy.get_fire_coordinates(nearest_enemy)
-    latest_nearest_enemy = nearest_enemy
-
-    print(fire_coordinates)
-    # 포격 좌표 설정
-    if 'message' not in fire_coordinates:
-        destination = {'x': fire_coordinates['x'], 'y': 10, 'z': fire_coordinates['z']}
+    if nearest_enemy and not is_action_start:
         try:
             if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
+            latest_nearest_enemy = nearest_enemy
             action_command = turret.get_action_command(
                 player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                destination,
+                nearest_enemy,
                 turret_x_angle=player_data.get('turret_x', 0),
                 turret_y_angle=player_data.get('turret_y', 0),
                 player_y_angle=player_data.get('body_y', 0)
             )
-     
-            print(f"🎯 Auto-set destination: {destination}")
+            print('🐟action_command', action_command)
+            is_action_start = True
         except ValueError as e:
-
             print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
+        
+        print('🤩🤩action - is_action_start', is_action_start)
+        print('🤩🤩action - hit_state', is_action_start)
 
-    # 로그 및 응답
-    if 'message' in nearest_enemy:
-        enemy_log = f"Nearest enemy: {nearest_enemy['message']}"
-    else:
-        enemy_log = (
-            f"Nearest enemy: x={nearest_enemy['x']:.6f}, z={nearest_enemy['z']:.6f}, "
-            f"class={nearest_enemy['className']}, confidence={nearest_enemy['confidence']:.2f}, "
-            f"source={nearest_enemy['source']}"
-        )
-
-    print(f"🚀 {enemy_log}")
-    print(f"🎯 Fire coordinates: {fire_coordinates}")
-
-    # if DEBUG: print(f"Detection response: {json.dumps(response, indent=2)}")
     return jsonify(result_list)
 
 @app.route('/info', methods=['POST'])
@@ -220,32 +207,27 @@ def get_move():
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
-    global action_command, latest_nearest_enemy
+    global action_command, latest_nearest_enemy, is_action_start
     if DEBUG: print('🚨 get_action >>>', action_command)
-
-    if latest_nearest_enemy and 'message' not in latest_nearest_enemy:
-        try:
-            action_command = turret.get_action_command(
-                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                {'x': latest_nearest_enemy['x'], 'y': 10, 'z': latest_nearest_enemy['z']},
-                turret_x_angle=player_data.get('turret_x', 0),
-                turret_y_angle=player_data.get('turret_y', 0),
-                player_y_angle=player_data.get('body_y', 0)
-            )
-        except ValueError as e:
-            if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
-            action_command = []
-
     if action_command:
         command = action_command.pop(0)
         if DEBUG: print(f"🔫 Action Command: {command}")
+        
+        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == '0.0':
+            # reverse 끝나는 지점
+            is_action_start = False
+            hit_state == -1
+            # print("impact_control False", action_command)
+            print('🤩🤩reverse end - is_action_start', is_action_start)
+            print('🤩🤩reverse end - hit_state', is_action_start)
+
         return jsonify(command)
     else:
         return jsonify({"turret": "", "weight": 0.0})
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
-    global destination, impact_info, player_data, action_command
+    global destination, impact_info, player_data, action_command, latest_nearest_enemy, hit_state
     if DEBUG: print('🚨 update_bullet >>>')
     data = request.get_json()
     action_command = []
@@ -261,14 +243,15 @@ def update_bullet():
         'timestamp': time.strftime('%H:%M:%S')
     }
 
-    is_hit = turret.is_hit(destination, impact_info)
+    is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     if DEBUG: print('💥', is_hit)
     if not is_hit:
         time.sleep(5)
+        hit_state = 0
         try:
             action_command = turret.get_action_command(
                 player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                destination,
+                latest_nearest_enemy,
                 turret_x_angle=player_data.get('turret_x', 0),
                 turret_y_angle=player_data.get('turret_y', 0),
                 player_y_angle=player_data.get('body_y', 0)
@@ -277,13 +260,21 @@ def update_bullet():
         except ValueError as e:
             if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
+        
+        print('🤩🤩re action - is_action_start', is_action_start)
+        print('🤩🤩re action - hit_state', is_action_start)
     else:
         if DEBUG: print("Hit!!!!!")
+        hit_state = 1
         action_command = turret.get_reverse_action_command(
             player_data.get('turret_x', 0),
             player_data.get('turret_y', 0),
-            player_data.get('body_y', 0)
+            player_data.get('body_x', 0),
+            player_data.get('body_y', 0),
         )
+        
+        print('🤩🤩reverse - is_action_start', is_action_start)
+        print('🤩🤩reverse - hit_state', is_action_start)
 
     if DEBUG: print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
 
@@ -317,16 +308,17 @@ def set_destination():
         if DEBUG: print(f"🚫 Invalid destination format: {str(e)}")
         return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
 
-@app.route('/set_obstacles', methods=['POST'])
-def set_obstacles():
+@app.route('/update_obstacle', methods=['POST'])
+def update_obstacle():
     global obstacles
-    if DEBUG: print('🚨 set_obstacles >>>')
+    if DEBUG: print('🚨 update_obstacle >>>')
     data = request.get_json()
     if not data or 'obstacles' not in data:
         if DEBUG: print("🚫 No obstacle data received")
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
     obstacles = data['obstacles']
+    print(f"🪨 Obstacle data updated: {obstacles}")
     if DEBUG: print("Obstacle data:", obstacles)
     if DEBUG: print(f"🪨 Obstacle data updated: {json.dumps(obstacles, indent=2)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received'})
@@ -343,12 +335,12 @@ def init():
         "rdStartX": 60,
         "rdStartY": 10,
         "rdStartZ": 280,
-        "detectMode": True,
-        "trackingMode": True,
-        "logMode": True,
-        "enemyTracking": True,
+        "detectMode": False,
+        "trackingMode": False,
+        "logMode": False,
+        "enemyTracking": False,
         "saveSnapshot": False,
-        "saveLog": True,
+        "saveLog": False,
         "saveLidarData": False,
         "lux": 30000
     }
