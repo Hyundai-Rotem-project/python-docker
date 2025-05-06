@@ -12,6 +12,7 @@ import modules.is_near_enemy as is_near_enemy
 app = Flask(__name__)
 
 DEBUG = True
+STATE_DEBUG = True
 
 # response = {
 #     'detections': filtered_results,
@@ -53,15 +54,12 @@ def dashboard():
     if DEBUG: print('🚨 dashboard >>>')
     return render_template('dashboard.html')
 
-is_action_start = False
+first_action_state = True
 hit_state = -1
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_data, obstacles, latest_nearest_enemy, action_command, destination, is_action_start, hit_state
+    global player_data, obstacles, latest_nearest_enemy, action_command, destination, first_action_state, hit_state
     print('🌍 detect >>>')
-    print('🤩🤩is_action_start', is_action_start)
-    print('🤩🤩hit_state', is_action_start)
-
 
     # 1. 이미지 수신
     image = request.files.get('image')
@@ -124,11 +122,16 @@ def detect():
     )
     print("Player position:", player_pos)
 
+    if STATE_DEBUG : print('1 🤩🤩first_action_state', first_action_state)
+    if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
+
+    # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
     # 가장 가까운 적 찾기
     nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pos, obstacles)
-    if nearest_enemy and not is_action_start:
+    print('nearest_enemy: 80, 94', nearest_enemy)
+    if nearest_enemy['state'] and first_action_state:
         try:
-            if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
+            # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
             latest_nearest_enemy = nearest_enemy
             action_command = turret.get_action_command(
                 player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
@@ -138,18 +141,19 @@ def detect():
                 player_y_angle=player_data.get('body_y', 0)
             )
             print('🐟action_command', action_command)
-            is_action_start = True
+            first_action_state = False
         except ValueError as e:
             print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
         
-        print('🤩🤩action - is_action_start', is_action_start)
-        print('🤩🤩action - hit_state', is_action_start)
+        if STATE_DEBUG : print('2 🤩🤩action - first_action_state f', first_action_state)
+        if STATE_DEBUG : print('2 🤩🤩action - hit_state -1', hit_state)
 
     return jsonify(result_list)
 
 @app.route('/info', methods=['POST'])
 def info():
+    if DEBUG: print('🚨 info >>>')
     global player_data
     data = request.get_json(force=True)
     if not data:
@@ -168,7 +172,7 @@ def info():
         'body_y': data.get('playerBodyY', player_data.get('body_y', 0)),
         'body_z': data.get('playerBodyZ', player_data.get('body_z', 0)),
     }
-    if DEBUG: print(f"📍 Player data updated: {player_data}")
+    # if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
 
 @app.route('/update_position', methods=['POST'])
@@ -207,19 +211,19 @@ def get_move():
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
-    global action_command, latest_nearest_enemy, is_action_start
+    global action_command, latest_nearest_enemy, first_action_state, hit_state
     if DEBUG: print('🚨 get_action >>>', action_command)
     if action_command:
         command = action_command.pop(0)
         if DEBUG: print(f"🔫 Action Command: {command}")
         
-        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == '0.0':
+        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
             # reverse 끝나는 지점
-            is_action_start = False
-            hit_state == -1
+            first_action_state = True
+            hit_state = -1
             # print("impact_control False", action_command)
-            print('🤩🤩reverse end - is_action_start', is_action_start)
-            print('🤩🤩reverse end - hit_state', is_action_start)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - first_action_state t', first_action_state)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - hit_state -1', hit_state)
 
         return jsonify(command)
     else:
@@ -243,6 +247,7 @@ def update_bullet():
         'timestamp': time.strftime('%H:%M:%S')
     }
 
+    # 수정필요: 타겟 명중 여부 판단 tolerence -> class_name
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     if DEBUG: print('💥', is_hit)
     if not is_hit:
@@ -261,8 +266,8 @@ def update_bullet():
             if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
         
-        print('🤩🤩re action - is_action_start', is_action_start)
-        print('🤩🤩re action - hit_state', is_action_start)
+        if STATE_DEBUG : print('3 🤩🤩re action - first_action_state f', first_action_state)
+        if STATE_DEBUG : print('3 🤩🤩re action - hit_state 0', hit_state)
     else:
         if DEBUG: print("Hit!!!!!")
         hit_state = 1
@@ -273,8 +278,8 @@ def update_bullet():
             player_data.get('body_y', 0),
         )
         
-        print('🤩🤩reverse - is_action_start', is_action_start)
-        print('🤩🤩reverse - hit_state', is_action_start)
+        if STATE_DEBUG : print('4 🤩🤩reverse - first_action_state f', first_action_state)
+        if STATE_DEBUG : print('4 🤩🤩reverse - hit_state 1', hit_state)
 
     if DEBUG: print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
 
@@ -308,6 +313,11 @@ def set_destination():
         if DEBUG: print(f"🚫 Invalid destination format: {str(e)}")
         return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
 
+def get_center(obstacle_info):
+    xc = (obstacle_info['x_min'] + obstacle_info['x_max'])/2
+    zc = (obstacle_info['z_min'] + obstacle_info['z_max'])/2
+    return xc, zc
+
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
     global obstacles
@@ -318,9 +328,10 @@ def update_obstacle():
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
     obstacles = data['obstacles']
-    print(f"🪨 Obstacle data updated: {obstacles}")
-    if DEBUG: print("Obstacle data:", obstacles)
-    if DEBUG: print(f"🪨 Obstacle data updated: {json.dumps(obstacles, indent=2)}")
+    center = [get_center(x) for x in obstacles]
+    print(f"🪨 Obstacle data updated: {center}")
+    # if DEBUG: print("Obstacle data:", obstacles)
+    # if DEBUG: print(f"🪨 Obstacle data updated: {json.dumps(obstacles, indent=2)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received'})
 
 @app.route('/init', methods=['GET'])

@@ -6,20 +6,24 @@ logging.basicConfig(filename='tank.log', level=logging.DEBUG, format='%(asctime)
 
 def find_nearest_enemy(detections, player_pos, obstacles):
     """가장 가까운 적 반환 (1200m 이내 적만 valid_enemies로 간주)"""
+    print('🐟', detections)
+    # print('🐟', player_pos)
+    # print('🐟', obstacles)
     logging.debug(f"Starting find_nearest_enemy with {len(detections)} detections, player_pos: {player_pos}, obstacles: {len(obstacles)}")
     
-    enemy_classes = {'car002', 'car003', 'tank'}  # 적 클래스
+    enemy_classes = {'car002', 'tank'}  # 적 클래스
+    # enemy_classes = {'car002', 'car003', 'tank'}  # 적 클래스
     detected_classes = {det['className'] for det in detections if det['className'] in enemy_classes and det['confidence'] >= 0.3}
     print('😡???', detected_classes)
     logging.debug(f"Detected classes: {detected_classes}")
     
     if not detected_classes:
         logging.info("No enemy classes detected")
-        return {'message': 'No enemy detected'}
+        return {'message': 'No enemy detected', 'state': False}
     
     if not player_pos:
         logging.warning("Player position not set")
-        return {'message': 'Player position not set'}
+        return {'message': 'Player position not set', 'state': False}
     
     valid_enemies = []
     for obs in obstacles:
@@ -42,8 +46,11 @@ def find_nearest_enemy(detections, player_pos, obstacles):
 
     if not valid_enemies:
         logging.info("No matching enemies within 1200m")
-        return {'message': 'No matching enemy found within 1200m'}
+        return {'message': 'No matching enemy found within 1200m', 'state': False}
     
+    # [(75.59507751464844, 93.69336700439453), (66.18401336669922, 115.299461364 7461), (34.20042037963867, 126.11703491210938), (87.6807632446289, 120.0806655883789), (100.6561279296875, 108.7013168334961)]
+
+
     min_distance = float('inf')
     nearest_enemy = None
     for enemy in valid_enemies:
@@ -54,6 +61,7 @@ def find_nearest_enemy(detections, player_pos, obstacles):
                 'x': enemy['x'],
                 'z': enemy['z'],
                 'y': 10.0,
+                'state': True
                 # 'distance': enemy['distance'],
                 # # 'className': enemy['className'],
                 # 'confidence': enemy['confidence'],
@@ -64,7 +72,7 @@ def find_nearest_enemy(detections, player_pos, obstacles):
         logging.debug(f"Nearest enemy: {nearest_enemy}")
     else:
         logging.info("No nearest enemy found after filtering")
-        return {'message': 'No valid enemy found within 1200m'}
+        return {'message': 'No valid enemy found within 1200m', 'state': False}
     
-    print('nearest_enemy', nearest_enemy)
+    # print('nearest_enemy', nearest_enemy)
     return nearest_enemy
