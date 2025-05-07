@@ -13,6 +13,7 @@ import math
 app = Flask(__name__)
 
 DEBUG = True
+STATE_DEBUG = True
 
 # response = {
 #     'detections': filtered_results,
@@ -76,11 +77,14 @@ def dashboard():
     if DEBUG: print('🚨 dashboard >>>')
     return render_template('dashboard.html')
 
+first_action_state = True
+hit_state = -1
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_data, obstacles, latest_nearest_enemy, action_command, destination
+    global player_data, obstacles, latest_nearest_enemy, action_command, destination, first_action_state, hit_state
     print('🌍 detect >>>')
-    
+
+    # 1. 이미지 수신
     image = request.files.get('image')
     if not image:
         return jsonify({"error": "No image received"}), 400
@@ -135,143 +139,38 @@ def detect():
     # logging.debug(f"FOV: horizontal={fov_horizontal}°, vertical={fov_vertical}°")
     # logging.debug(f"Camera pose: {player_pose}")
 
-    # # 4. YOLO 탐지
-    # results = model(image_path, imgsz=640)
-    # detections = results[0].boxes.data.cpu().numpy()
-    # logging.debug(f"YOLO detections: {len(detections)} objects")
+    if STATE_DEBUG : print('1 🤩🤩first_action_state', first_action_state)
+    if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
 
-    # # 5. 탐지 결과 필터링
-    # target_classes = {
-    #     0: 'car002', 1: 'car003', 2: 'car005', 3: 'human001',
-    #     4: 'rock001', 5: 'rock2', 6: 'tank', 7: 'wall001', 8: 'wall002'
-    # }
-    # class_colors = {
-    #     'car002': 'red', 'car003': 'blue', 'car005': 'green', 'human001': 'orange',
-    #     'rock001': 'purple', 'rock2': 'yellow', 'tank': 'cyan', 'wall001': 'pink', 'wall002': 'brown'
-    # }
-    # try:
-    #     font = ImageFont.truetype("arial.ttf", size=20)
-    # except:
-    #     font = ImageFont.load_default()
+    # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
+    # 가장 가까운 적 찾기
+    nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pos, obstacles)
+    print('nearest_enemy: 80, 94', nearest_enemy)
+    if nearest_enemy['state'] and first_action_state:
+        try:
+            # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
+            latest_nearest_enemy = nearest_enemy
+            action_command = turret.get_action_command(
+                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
+                nearest_enemy,
+                turret_x_angle=player_data.get('turret_x', 0),
+                turret_y_angle=player_data.get('turret_y', 0),
+                player_y_angle=player_data.get('body_y', 0)
+            )
+            print('🐟action_command', action_command)
+            first_action_state = False
+        except ValueError as e:
+            print(f"🚫 Error generating action command: {str(e)}")
+            action_command = []
+        
+        if STATE_DEBUG : print('2 🤩🤩action - first_action_state f', first_action_state)
+        if STATE_DEBUG : print('2 🤩🤩action - hit_state -1', hit_state)
 
-    # filtered_results = []
-
-    # img = Image.open(image_path).convert('RGB')
-    # draw = ImageDraw.Draw(img)
-
-    # for row in detections:
-    #     class_id = int(row[5])
-    #     if class_id not in target_classes:
-    #         continue
-    # target_name = target_classes[class_id]
-    # bbox_yolo = [float(item) for item in row[:4]]
-    # confidence = float(row[4])
-    # bbox = [
-    #     bbox_yolo[0] * 1920 / 640,
-    #     bbox_yolo[1] * 1080 / 640,
-    #     bbox_yolo[2] * 1920 / 640,
-    #     bbox_yolo[3] * 1080 / 640
-    # ]
-    # coords = calculate_map_coords(
-    #     fov_horizontal, fov_vertical, player_pose,
-    #     width, height, map_width, map_height,
-    #     bbox
-    # )
-    # filtered_results.append({
-    #     'className': target_name,
-    #     'bbox': bbox,
-    #     'confidence': confidence,
-    #     'map_center': coords['map_center']
-    # })
-    # for box in detections:
-    #     class_id = int(box[5])
-    #     if class_id in target_classes: 
-    #         filtered_results.append({
-    #             'className': target_classes[class_id],
-    #             'bbox': [float(coord) for coord in box[:4]],
-    #             'confidence': float(box[4])
-    #         })
-
-    # # 6. obstacles와 detections 매칭
-    # matched_obstacles = is_near_enemy.match_obstacles_with_detections(obstacles, filtered_results, threshold=MATCH_THRESHOLD)
-
-    # # 7. 가장 가까운 적 찾기
-    # nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pose, matched_obstacles, match_threshold=MATCH_THRESHOLD)
-    # fire_coordinates = is_near_enemy.get_fire_coordinates(nearest_enemy)
-    # latest_nearest_enemy = nearest_enemy
-    # print(f"🐟 nearest_enemy: {nearest_enemy}")
-    # print(f"🪡 fire_coordinates: {fire_coordinates}")
-    # logging.debug(f"Nearest enemy: {nearest_enemy}")
-    # logging.debug(f"Fire coordinates: {fire_coordinates}")
-
-
-    # result_list = []
-    # for row in detections: 
-    #     target_name = target_classes[row[-1]]
-    #     target_bbox = [float(item) for item in row[:4]]
-    #     confidence = float(row[-2])
-    #     result_list.append({'className': target_name, 'bbox': target_bbox, 'confidence': confidence})
-    
-
-    # # 플레이어 위치
-    # player_pos = (
-    #     player_data.get('pos', {}).get('x', 60),
-    #     player_data.get('pos', {}).get('z', 57)
-    # )
-    # print("Player position:", player_pos)
-
-    # # 8. 포격 좌표 설정 및 액션 커맨드
-    # if 'message' not in fire_coordinates:
-    #     destination = {'x': fire_coordinates['x'], 'y': 10, 'z': fire_coordinates['z']}
-    #     try:
-    #         if DEBUG: print(f"👉 Generating action command: player_pose={player_pose}, dest={destination}")
-    #         action_command = turret.get_action_command(
-    #             player_pose,
-    #             destination,
-    #             turret_x_angle=player_data.get('turret_x', 0),
-    #             turret_y_angle=player_data.get('turret_y', 0),
-    #             player_y_angle=player_data.get('body_y', 0)
-    #         )
-    #         print(f"🎯 Auto-set destination: {destination}")
-    #     except ValueError as e:
-    #         print(f"🚫 Error generating action command: {str(e)}")
-    #         action_command = []
-
-    # # 9. 전체 이미지의 맵 비율
-    # image_coords = calculate_map_coords(
-    #     fov_horizontal, fov_vertical, player_pose,
-    #     width, height, map_width, map_height,
-    #     [0, 0, width, height]
-    # )
-
-    # # 10. 로그 및 응답
-    # if 'message' in nearest_enemy:
-    #     enemy_log = f"Nearest enemy: {nearest_enemy['message']}"
-    # else:
-    #     enemy_log = (
-    #         f"Nearest enemy: x={nearest_enemy['x']:.6f}, z={nearest_enemy['z']:.6f}, "
-    #         f"class={nearest_enemy['className']}, confidence={nearest_enemy['confidence']:.2f}, "
-    #         f"source={nearest_enemy['source']}"
-    #     )
-    # print(f"🚀 {enemy_log}")
-    # print(f"🎯 Fire coordinates: {fire_coordinates}")
-
-    # response = {
-    #     'detections': filtered_results,
-    #     'matched_obstacles': matched_obstacles,
-    #     'nearest_enemy': nearest_enemy,
-    #     'fire_coordinates': fire_coordinates,
-    #     'image_real_size': image_coords['image_real_size'],
-    #     'map_ratio': image_coords['map_ratio'],
-    #     'fov': {'horizontal': fov_horizontal, 'vertical': fov_vertical},
-    #     'match_threshold': MATCH_THRESHOLD,
-    #     'control': 'continue'
-    # }
-    # if DEBUG: print(f"Detection response: {json.dumps(response, indent=2)}")
-    # return jsonify(response)
+    return jsonify(result_list)
 
 @app.route('/info', methods=['POST'])
 def info():
+    if DEBUG: print('🚨 info >>>')
     global player_data
     data = request.get_json(force=True)
     if not data:
@@ -290,7 +189,7 @@ def info():
         'body_y': data.get('playerBodyY', player_data.get('body_y', 0)),
         'body_z': data.get('playerBodyZ', player_data.get('body_z', 0)),
     }
-    if DEBUG: print(f"📍 Player data updated: {player_data}")
+    # if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
 
 @app.route('/update_position', methods=['POST'])
@@ -329,32 +228,27 @@ def get_move():
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
-    global action_command, latest_nearest_enemy
+    global action_command, latest_nearest_enemy, first_action_state, hit_state
     if DEBUG: print('🚨 get_action >>>', action_command)
-
-    if latest_nearest_enemy and 'message' not in latest_nearest_enemy:
-        try:
-            action_command = turret.get_action_command(
-                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                {'x': latest_nearest_enemy['x'], 'y': 10, 'z': latest_nearest_enemy['z']},
-                turret_x_angle=player_data.get('turret_x', 0),
-                turret_y_angle=player_data.get('turret_y', 0),
-                player_y_angle=player_data.get('body_y', 0)
-            )
-        except ValueError as e:
-            if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
-            action_command = []
-
     if action_command:
         command = action_command.pop(0)
         if DEBUG: print(f"🔫 Action Command: {command}")
+        
+        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
+            # reverse 끝나는 지점
+            first_action_state = True
+            hit_state = -1
+            # print("impact_control False", action_command)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - first_action_state t', first_action_state)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - hit_state -1', hit_state)
+
         return jsonify(command)
     else:
         return jsonify({"turret": "", "weight": 0.0})
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
-    global destination, impact_info, player_data, action_command
+    global destination, impact_info, player_data, action_command, latest_nearest_enemy, hit_state
     if DEBUG: print('🚨 update_bullet >>>')
     data = request.get_json()
     print("😍😍",data)
@@ -371,16 +265,17 @@ def update_bullet():
         'target': data.get('hit'),
         'timestamp': time.strftime('%H:%M:%S')
     }
-    # FIXME
-    print("🤦‍♀️",destination, "impact_info", impact_info)
-    is_hit = turret.is_hit(destination, impact_info)
+
+    # 수정필요: 타겟 명중 여부 판단 tolerence -> class_name
+    is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     if DEBUG: print('💥', is_hit)
     if not is_hit:
         time.sleep(5)
+        hit_state = 0
         try:
             action_command = turret.get_action_command(
                 player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                destination,
+                latest_nearest_enemy,
                 turret_x_angle=player_data.get('turret_x', 0),
                 turret_y_angle=player_data.get('turret_y', 0),
                 player_y_angle=player_data.get('body_y', 0)
@@ -389,14 +284,21 @@ def update_bullet():
         except ValueError as e:
             if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
+        
+        if STATE_DEBUG : print('3 🤩🤩re action - first_action_state f', first_action_state)
+        if STATE_DEBUG : print('3 🤩🤩re action - hit_state 0', hit_state)
     else:
         if DEBUG: print("Hit!!!!!")
-        #FIXME
+        hit_state = 1
         action_command = turret.get_reverse_action_command(
             player_data.get('turret_x', 0),
             player_data.get('turret_y', 0),
-            player_data.get('body_y', 0)
+            player_data.get('body_x', 0),
+            player_data.get('body_y', 0),
         )
+        
+        if STATE_DEBUG : print('4 🤩🤩reverse - first_action_state f', first_action_state)
+        if STATE_DEBUG : print('4 🤩🤩reverse - hit_state 1', hit_state)
 
     if DEBUG: print(f"💥 Bullet Impact at X={impact_info['x']}, Y={impact_info['y']}, Z={impact_info['z']}, Target={impact_info['target']}")
 
@@ -430,10 +332,15 @@ def set_destination():
         if DEBUG: print(f"🚫 Invalid destination format: {str(e)}")
         return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
 
+def get_center(obstacle_info):
+    xc = (obstacle_info['x_min'] + obstacle_info['x_max'])/2
+    zc = (obstacle_info['z_min'] + obstacle_info['z_max'])/2
+    return xc, zc
+
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
     global obstacles
-    print('🚨 update_obstacle >>>')
+    if DEBUG: print('🚨 update_obstacle >>>')
     data = request.get_json()
     if not data or 'obstacles' not in data:
         if DEBUG: print("🚫 No obstacle data received")
@@ -441,6 +348,7 @@ def update_obstacle():
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
     obstacles = data['obstacles']
+    center = [get_center(x) for x in obstacles]
     print(f"🪨 Obstacle data updated: {len(obstacles)} items")
     logging.debug(f"Obstacle data updated: {json.dumps(obstacles, indent=2)}")
     if DEBUG: print(f"🪨 Obstacle data: {json.dumps(obstacles, indent=2)}")
@@ -505,3 +413,139 @@ def test_rotation():
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+
+
+# # 4. YOLO 탐지
+# results = model(image_path, imgsz=640)
+# detections = results[0].boxes.data.cpu().numpy()
+# logging.debug(f"YOLO detections: {len(detections)} objects")
+
+# # 5. 탐지 결과 필터링
+# target_classes = {
+#     0: 'car002', 1: 'car003', 2: 'car005', 3: 'human001',
+#     4: 'rock001', 5: 'rock2', 6: 'tank', 7: 'wall001', 8: 'wall002'
+# }
+# class_colors = {
+#     'car002': 'red', 'car003': 'blue', 'car005': 'green', 'human001': 'orange',
+#     'rock001': 'purple', 'rock2': 'yellow', 'tank': 'cyan', 'wall001': 'pink', 'wall002': 'brown'
+# }
+# try:
+#     font = ImageFont.truetype("arial.ttf", size=20)
+# except:
+#     font = ImageFont.load_default()
+
+# filtered_results = []
+
+# img = Image.open(image_path).convert('RGB')
+# draw = ImageDraw.Draw(img)
+
+# for row in detections:
+#     class_id = int(row[5])
+#     if class_id not in target_classes:
+#         continue
+# target_name = target_classes[class_id]
+# bbox_yolo = [float(item) for item in row[:4]]
+# confidence = float(row[4])
+# bbox = [
+#     bbox_yolo[0] * 1920 / 640,
+#     bbox_yolo[1] * 1080 / 640,
+#     bbox_yolo[2] * 1920 / 640,
+#     bbox_yolo[3] * 1080 / 640
+# ]
+# coords = calculate_map_coords(
+#     fov_horizontal, fov_vertical, player_pose,
+#     width, height, map_width, map_height,
+#     bbox
+# )
+# filtered_results.append({
+#     'className': target_name,
+#     'bbox': bbox,
+#     'confidence': confidence,
+#     'map_center': coords['map_center']
+# })
+# for box in detections:
+#     class_id = int(box[5])
+#     if class_id in target_classes: 
+#         filtered_results.append({
+#             'className': target_classes[class_id],
+#             'bbox': [float(coord) for coord in box[:4]],
+#             'confidence': float(box[4])
+#         })
+
+# # 6. obstacles와 detections 매칭
+# matched_obstacles = is_near_enemy.match_obstacles_with_detections(obstacles, filtered_results, threshold=MATCH_THRESHOLD)
+
+# # 7. 가장 가까운 적 찾기
+# nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pose, matched_obstacles, match_threshold=MATCH_THRESHOLD)
+# fire_coordinates = is_near_enemy.get_fire_coordinates(nearest_enemy)
+# latest_nearest_enemy = nearest_enemy
+# print(f"🐟 nearest_enemy: {nearest_enemy}")
+# print(f"🪡 fire_coordinates: {fire_coordinates}")
+# logging.debug(f"Nearest enemy: {nearest_enemy}")
+# logging.debug(f"Fire coordinates: {fire_coordinates}")
+
+
+# result_list = []
+# for row in detections: 
+#     target_name = target_classes[row[-1]]
+#     target_bbox = [float(item) for item in row[:4]]
+#     confidence = float(row[-2])
+#     result_list.append({'className': target_name, 'bbox': target_bbox, 'confidence': confidence})
+
+
+# # 플레이어 위치
+# player_pos = (
+#     player_data.get('pos', {}).get('x', 60),
+#     player_data.get('pos', {}).get('z', 57)
+# )
+# print("Player position:", player_pos)
+
+# # 8. 포격 좌표 설정 및 액션 커맨드
+# if 'message' not in fire_coordinates:
+#     destination = {'x': fire_coordinates['x'], 'y': 10, 'z': fire_coordinates['z']}
+#     try:
+#         if DEBUG: print(f"👉 Generating action command: player_pose={player_pose}, dest={destination}")
+#         action_command = turret.get_action_command(
+#             player_pose,
+#             destination,
+#             turret_x_angle=player_data.get('turret_x', 0),
+#             turret_y_angle=player_data.get('turret_y', 0),
+#             player_y_angle=player_data.get('body_y', 0)
+#         )
+#         print(f"🎯 Auto-set destination: {destination}")
+#     except ValueError as e:
+#         print(f"🚫 Error generating action command: {str(e)}")
+#         action_command = []
+
+# # 9. 전체 이미지의 맵 비율
+# image_coords = calculate_map_coords(
+#     fov_horizontal, fov_vertical, player_pose,
+#     width, height, map_width, map_height,
+#     [0, 0, width, height]
+# )
+
+# # 10. 로그 및 응답
+# if 'message' in nearest_enemy:
+#     enemy_log = f"Nearest enemy: {nearest_enemy['message']}"
+# else:
+#     enemy_log = (
+#         f"Nearest enemy: x={nearest_enemy['x']:.6f}, z={nearest_enemy['z']:.6f}, "
+#         f"class={nearest_enemy['className']}, confidence={nearest_enemy['confidence']:.2f}, "
+#         f"source={nearest_enemy['source']}"
+#     )
+# print(f"🚀 {enemy_log}")
+# print(f"🎯 Fire coordinates: {fire_coordinates}")
+
+# response = {
+#     'detections': filtered_results,
+#     'matched_obstacles': matched_obstacles,
+#     'nearest_enemy': nearest_enemy,
+#     'fire_coordinates': fire_coordinates,
+#     'image_real_size': image_coords['image_real_size'],
+#     'map_ratio': image_coords['map_ratio'],
+#     'fov': {'horizontal': fov_horizontal, 'vertical': fov_vertical},
+#     'match_threshold': MATCH_THRESHOLD,
+#     'control': 'continue'
+# }
+# if DEBUG: print(f"Detection response: {json.dumps(response, indent=2)}")
+# return jsonify(response)
