@@ -8,7 +8,7 @@ import time
 import json
 import modules.turret as turret
 import modules.is_near_enemy as is_near_enemy
-import modules.get_closest_enemy_position as get_closest_enemy_position
+import client.modules.get_enemy_pos as get_enemy_pos
 import math
 
 app = Flask(__name__)
@@ -168,9 +168,8 @@ def detect():
 
     # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
     # 가장 가까운 적 찾기
-    # 🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
-    # get_closest_enemy_position.calculate_relative_angle(player_data, obstacles)
-    nearest_enemy = get_closest_enemy_position.match_bbox_to_obstacle(filtered_results, player_data, obstacles_center)
+    # 🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+    nearest_enemy = get_enemy_pos.match_bbox_to_obstacle(filtered_results, player_data, obstacles)
     # nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_data['pos'], obstacles)
     print('nearest_enemy: 80, 94', nearest_enemy)
     if nearest_enemy['state'] and first_action_state:
