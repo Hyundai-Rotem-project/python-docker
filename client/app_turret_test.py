@@ -8,6 +8,7 @@ import time
 import json
 import modules.turret as turret
 import modules.is_near_enemy as is_near_enemy
+import modules.get_closest_enemy_position as get_closest_enemy_position
 import math
 
 app = Flask(__name__)
@@ -48,12 +49,22 @@ player_data = {'pos': {'x': 60, 'y': 10, 'z': 57}}  # 기본 위치 설정
 destination = {}
 impact_info = {}
 obstacles = []  # /set_obstacles 데이터 저장
+obstacles_center = []
 latest_nearest_enemy = None
 MATCH_THRESHOLD = 3.0
 
-def calculate_map_coords(fov_horizontal, fov_vertical, player_pose, image_width, image_height, map_width, map_height, bbox):
-    """FOV, player_pose['y'], 이미지 픽셀 값으로 맵 비율과 사물 중심 X, Z 좌표 계산"""
-    camera_height = player_pose.get('y', 8)
+#3 FOV 및 카메라 설정
+FOV_HORIZONTAL = 50
+FOV_VERTICAL = 28
+IMAGE_WIDTH = 1920
+IMAGE_HEIGHT = 1080
+MAP_WIDTH = 300
+MAP_HEIGHT = 300
+
+
+def calculate_map_coords(fov_horizontal, fov_vertical, player_pos, image_width, image_height, map_width, map_height, bbox):
+    """FOV, player_pos['y'], 이미지 픽셀 값으로 맵 비율과 사물 중심 X, Z 좌표 계산"""
+    camera_height = player_pos['y']
     width_real = 2 * camera_height * math.tan(math.radians(fov_horizontal / 2))
     height_real = 2 * camera_height * math.tan(math.radians(fov_vertical / 2))
     ratio_horizontal = (width_real / map_width) * 100
@@ -64,8 +75,9 @@ def calculate_map_coords(fov_horizontal, fov_vertical, player_pose, image_width,
     meter_per_pixel_y = height_real / image_height
     x_relative_m = (x_center_pixel - image_width / 2) * meter_per_pixel_x
     z_relative_m = (y_center_pixel - image_height / 2) * meter_per_pixel_y
-    x_map = player_pose.get('x', 60) + x_relative_m
-    z_map = player_pose.get('z', 57) + camera_height + z_relative_m
+    x_map = player_pos['x'] + x_relative_m
+    z_map = player_pos['z'] + camera_height + z_relative_m
+    # print('🤢???', {'x': x_map, 'z': z_map})
     return {
         'image_real_size': {'width': width_real, 'height': height_real},
         'map_ratio': {'horizontal': ratio_horizontal, 'vertical': ratio_vertical},
@@ -117,47 +129,64 @@ def detect():
     except:
         font = ImageFont.load_default()
 
-    filtered_results = []
-    for box in detections:
-        class_id = int(box[5])
-        if class_id in target_classes:
-            class_name = target_classes[class_id]
-            filtered_results.append({
-                'className': class_name,
-                'bbox': [float(coord) for coord in box[:4]],
-                'confidence': float(box[4]),
-                'color': '#00FF00',
-                'filled': False,
-                'updateBoxWhileMoving': False
-            })
+    print("Player position:", player_data['pos'])
     
-    # 플레이어 위치
-    player_pos = {
-        'x': player_data.get('pos', {}).get('x', 60),
-        'z': player_data.get('pos', {}).get('z', 57)
-    }
-    print("Player position:", player_pos)
+    filtered_results = []
+    for index, box in enumerate(detections):
+        class_id = int(box[5])
+        if class_id not in target_classes:
+            continue
+
+        target_name = target_classes[class_id]
+        bbox_yolo = [float(item) for item in box[:4]]
+        confidence = float(box[4])
+        bbox = [
+            bbox_yolo[0] * 1920 / 640,
+            bbox_yolo[1] * 1080 / 640,
+            bbox_yolo[2] * 1920 / 640,
+            bbox_yolo[3] * 1080 / 640
+        ]
+
+        coords = calculate_map_coords(
+            FOV_HORIZONTAL, FOV_VERTICAL, player_data['pos'],
+            IMAGE_WIDTH, IMAGE_HEIGHT, MAP_WIDTH, MAP_HEIGHT,
+            bbox_yolo
+        )
+        filtered_results.append({
+            'id': index,
+            'className': target_name,
+            'bbox': bbox_yolo,
+            'confidence': confidence,
+            # 'map_center': coords['map_center'],
+            'color': '#0000FF',
+            'filled': False,
+            'updateBoxWhileMoving': False
+        })
 
     if STATE_DEBUG : print('1 🤩🤩first_action_state', first_action_state)
     if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
 
     # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
     # 가장 가까운 적 찾기
-    nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pos, obstacles)
+    # 🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
+    # get_closest_enemy_position.calculate_relative_angle(player_data, obstacles)
+    nearest_enemy = get_closest_enemy_position.match_bbox_to_obstacle(filtered_results, player_data, obstacles_center)
+    # nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_data['pos'], obstacles)
     print('nearest_enemy: 80, 94', nearest_enemy)
     if nearest_enemy['state'] and first_action_state:
         try:
             # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
             latest_nearest_enemy = nearest_enemy
             action_command = turret.get_action_command(
-                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
+                player_data['pos'],
                 nearest_enemy,
-                turret_x_angle=player_data.get('turret_x', 0),
-                turret_y_angle=player_data.get('turret_y', 0),
-                player_y_angle=player_data.get('body_y', 0)
+                turret_x_angle=player_data['turret_x'],
+                turret_y_angle=player_data['turret_y'],
+                player_y_angle=player_data['body_y']
             )
+        
             print('🐟action_command', action_command)
-            first_action_state = False
+            # first_action_state = False
         except ValueError as e:
             print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
@@ -175,18 +204,18 @@ def info():
     if not data:
         if DEBUG: print("🚫 No JSON received")
         return jsonify({"error": "No JSON received", "control": ""}), 400
-
+    
     player_data = {
         'pos': {
-            'x': data.get('playerPos', {}).get('x', player_data.get('pos', {}).get('x', 60)),
-            'y': data.get('playerPos', {}).get('y', player_data.get('pos', {}).get('y', 10)),
-            'z': data.get('playerPos', {}).get('z', player_data.get('pos', {}).get('z', 57)),
+            'x': data.get('playerPos', {}).get('x'),
+            'y': data.get('playerPos', {}).get('y'),
+            'z': data.get('playerPos', {}).get('z'),
         },
-        'turret_x': data.get('playerTurretX', player_data.get('turret_x', 0)),
-        'turret_y': data.get('playerTurretY', player_data.get('turret_y', 0)),
-        'body_x': data.get('playerBodyX', player_data.get('body_x', 0)),
-        'body_y': data.get('playerBodyY', player_data.get('body_y', 0)),
-        'body_z': data.get('playerBodyZ', player_data.get('body_z', 0)),
+        'turret_x': data.get('playerTurretX'),
+        'turret_y': data.get('playerTurretY'),
+        'body_x': data.get('playerBodyX'),
+        'body_y': data.get('playerBodyY'),
+        'body_z': data.get('playerBodyZ'),
     }
     # if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
@@ -230,6 +259,7 @@ def get_action():
     global action_command, latest_nearest_enemy, first_action_state, hit_state
     if DEBUG: print('🚨 get_action >>>', action_command)
     if action_command:
+        first_action_state = False
         command = action_command.pop(0)
         if DEBUG: print(f"🔫 Action Command: {command}")
         
@@ -331,14 +361,10 @@ def set_destination():
         if DEBUG: print(f"🚫 Invalid destination format: {str(e)}")
         return jsonify({"status": "ERROR", "message": f"Invalid format: {str(e)}"}), 400
 
-def get_center(obstacle_info):
-    xc = (obstacle_info['x_min'] + obstacle_info['x_max'])/2
-    zc = (obstacle_info['z_min'] + obstacle_info['z_max'])/2
-    return xc, zc
 
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
-    global obstacles
+    global obstacles, obstacles_center
     if DEBUG: print('🚨 update_obstacle >>>')
     data = request.get_json()
     if not data or 'obstacles' not in data:
@@ -347,10 +373,9 @@ def update_obstacle():
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
     obstacles = data['obstacles']
-    center = [get_center(x) for x in obstacles]
-    print(f"🪨 Obstacle data updated: {len(obstacles)} items")
-    logging.debug(f"Obstacle data updated: {json.dumps(obstacles, indent=2)}")
-    if DEBUG: print(f"🪨 Obstacle data: {json.dumps(obstacles, indent=2)}")
+    print(f"🪨 Obstacle data updated: {obstacles}")
+    # logging.debug(f"Obstacle data updated: {json.dumps(obstacles, indent=2)}")
+    # if DEBUG: print(f"🪨 Obstacle data: {json.dumps(obstacles, indent=2)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received', 'obstacles_count': len(obstacles)})
 
 @app.route('/init', methods=['GET'])
@@ -361,7 +386,7 @@ def init():
         "startMode": "start",
         "blStartX": 60,
         "blStartY": 10,
-        "blStartZ": 57,
+        "blStartZ": 45,
         "rdStartX": 60,
         "rdStartY": 10,
         "rdStartZ": 280,

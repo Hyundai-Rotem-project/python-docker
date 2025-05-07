@@ -101,10 +101,10 @@ def find_nearest_enemy(detections, player_pose, obstacles, match_threshold=3.0):
         'x': nearest_enemy['x'],
         'z': nearest_enemy['z'],
         'y': 10.0,
-        'distance': nearest_enemy['distance'],
-        'className': nearest_enemy['className'],
-        'confidence': nearest_enemy['confidence'],
-        'source': nearest_enemy['source'],
+        # 'distance': nearest_enemy['distance'],
+        # 'className': nearest_enemy['className'],
+        # 'confidence': nearest_enemy['confidence'],
+        # 'source': nearest_enemy['source'],
         'state': True
     }
     logging.debug(f"Nearest enemy: {result}")
