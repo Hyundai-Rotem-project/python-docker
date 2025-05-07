@@ -42,7 +42,7 @@ def find_nearest_enemy(detections, player_pose, obstacles, match_threshold=3.0):
     """가장 가까운 적 반환 (120m 이내, detections 우선, obstacles 보조)"""
     logging.debug(f"Starting find_nearest_enemy with {len(detections)} detections, player_pose: {player_pose}, obstacles: {len(obstacles)}")
     
-    enemy_classes = {'car002', 'car003', 'tank'}
+    enemy_classes = {'car002', 'tank'}
     valid_enemies = []
     
     # 1. detections에서 적 탐지
@@ -51,7 +51,7 @@ def find_nearest_enemy(detections, player_pose, obstacles, match_threshold=3.0):
     
     if not player_pose or 'x' not in player_pose or 'z' not in player_pose:
         logging.warning("Player pose not set or incomplete")
-        return {'message': 'Player pose not set'}
+        return {'message': 'Player pose not set', 'state': False}
     
     for det in detections:
         if det['className'] in enemy_classes and det['confidence'] >= 0.3:
@@ -94,7 +94,7 @@ def find_nearest_enemy(detections, player_pose, obstacles, match_threshold=3.0):
     # 3. 가장 가까운 적 선택
     if not valid_enemies:
         logging.info("No valid enemies within 120m")
-        return {'message': 'No valid enemy found within 120m'}
+        return {'message': 'No valid enemy found within 120m', 'state': False}
     
     nearest_enemy = min(valid_enemies, key=lambda e: e['distance'])
     result = {
@@ -104,7 +104,8 @@ def find_nearest_enemy(detections, player_pose, obstacles, match_threshold=3.0):
         'distance': nearest_enemy['distance'],
         'className': nearest_enemy['className'],
         'confidence': nearest_enemy['confidence'],
-        'source': nearest_enemy['source']
+        'source': nearest_enemy['source'],
+        'state': True
     }
     logging.debug(f"Nearest enemy: {result}")
     return result

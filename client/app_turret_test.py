@@ -90,54 +90,53 @@ def detect():
         return jsonify({"error": "No image received"}), 400
 
     image_path = 'temp_image.jpg'
-    image.save(image_path)
+    try:
+        image.save(image_path)
+    except Exception as e:
+        return jsonify([])
 
-    results = model(image_path)
+    # 2. YOLO 탐지
+    results = model(image_path, imgsz=640)
     detections = results[0].boxes.data.cpu().numpy()
 
-    target_classes = {0: "person", 2: "car", 7: "truck", 15: "rock"}
+    # 3. 탐지 결과 필터링
+    target_classes = {
+        0: 'car002', 1: 'car003', 2: 'car005', 3: 'human001',
+        4: 'rock001', 5: 'rock2', 6: 'tank', 7: 'wall001', 8: 'wall002'
+    }
+    class_colors = {
+        'car002': '#FF0000', 'car003': '#0000FF', 'car005': '#00FF00', 'human001': 'orange',
+        'rock001': 'purple', 'rock2': 'yellow', 'tank': '#333388', 'wall001': 'pink', 'wall002': 'brown'
+    }
+
+    img = Image.open(image_path).convert('RGB')
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font = ImageFont.truetype("arial.ttf", size=20)
+    except:
+        font = ImageFont.load_default()
+
     filtered_results = []
     for box in detections:
         class_id = int(box[5])
         if class_id in target_classes:
+            class_name = target_classes[class_id]
             filtered_results.append({
-                'className': target_classes[class_id],
+                'className': class_name,
                 'bbox': [float(coord) for coord in box[:4]],
                 'confidence': float(box[4]),
                 'color': '#00FF00',
                 'filled': False,
                 'updateBoxWhileMoving': False
             })
-
-    return jsonify(filtered_results)
-    # # 1. 이미지 수신
-    # image = request.files.get('image')
-    # if not image:
-    #     return jsonify([])
-
-    # image_path = 'temp_image.jpg'
-
-    # try:
-    #     image.save(image_path)
-    # except Exception as e:
-    #     return jsonify([])
     
-    # # 2. 이미지 크기 확인
-    # img = Image.open(image_path).convert('RGB')
-    # width, height = img.size
-    # print(f"이미지 크기: 너비 = {width} 픽셀, 높이 = {height} 픽셀")
-    # logging.debug(f"Image size: width={width}px, height={height}px")
-
-    # #3 FOV 및 카메라 설정
-    # fov_horizontal = 50
-    # fov_vertical = 28
-    # player_pose = player_data.get('pose', {'x': 60, 'y': 8, 'z': 57})
-    # map_width = 300
-    # map_height = 300
-    # print(f"FOV: 수평 = {fov_horizontal:.2f}도, 수직 = {fov_vertical:.2f}도")
-    # print(f"카메라 위치: x = {player_pose['x']:.2f}m, y = {player_pose['y']:.2f}m, z = {player_pose['z']:.2f}m")
-    # logging.debug(f"FOV: horizontal={fov_horizontal}°, vertical={fov_vertical}°")
-    # logging.debug(f"Camera pose: {player_pose}")
+    # 플레이어 위치
+    player_pos = {
+        'x': player_data.get('pos', {}).get('x', 60),
+        'z': player_data.get('pos', {}).get('z', 57)
+    }
+    print("Player position:", player_pos)
 
     if STATE_DEBUG : print('1 🤩🤩first_action_state', first_action_state)
     if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
@@ -166,7 +165,7 @@ def detect():
         if STATE_DEBUG : print('2 🤩🤩action - first_action_state f', first_action_state)
         if STATE_DEBUG : print('2 🤩🤩action - hit_state -1', hit_state)
 
-    return jsonify(result_list)
+    return jsonify(filtered_results)
 
 @app.route('/info', methods=['POST'])
 def info():
