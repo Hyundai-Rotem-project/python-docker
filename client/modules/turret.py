@@ -17,7 +17,7 @@ def calculate_angle_diff(target_angle, current_angle):
 # action_command 생성
 def generate_action_command(type, diff, difault_w):
     action_command = []
-    while abs(diff) > 0.1:
+    while abs(diff) > 0.05:
         if diff > 0:
             direction = "E" if type == 'hor' else "R"
         else:
@@ -44,8 +44,8 @@ def get_angles(from_pos, to_pos):
 
     return flat_distance, yaw, pitch
 
-def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
-    print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
+def get_action_command(type, player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
+    print('🐟🐟', type, player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
     action_command = []
 
     flat_distance, target_yaw, target_pitch = get_angles(player_pos, target_pos)
@@ -66,10 +66,11 @@ def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None
 
         # pitch_diff = target_pitch - turret_y_angle - player_y_angle
         # pitch_diff = target_pitch - turret_y_angle # 재조준 테스트 위한 오조준
-        print("🤢 pitch_diff", pitch_diff)
-        print("🤢 target_pitch", target_pitch)
-        print("🤢 turret_y_angle", turret_y_angle)
-        print("🤢 player_y_angle_offset", player_y_angle_offset)
+        
+        # print("🤢 pitch_diff", pitch_diff)
+        # print("🤢 target_pitch", target_pitch)
+        # print("🤢 turret_y_angle", turret_y_angle)
+        # print("🤢 player_y_angle_offset", player_y_angle_offset)
 
     else:
         # 재조준
@@ -90,8 +91,14 @@ def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None
 
 # 명중 확인
 def is_hit(target_pos, bullet_pos, tolerance=5.5):
-    # FIXME
-    print("🤷‍♂️🤷‍♂️🤷‍♂️", target_pos, bullet_pos)
+    print("🤷‍♂️🤷‍♂️🤷‍♂️", target_pos)
+    print("🤷‍♂️🤷‍♂️🤷‍♂️", bullet_pos)
+    
+    # # className으로 명중 판별
+    # is_hit = target_pos['className'] == bullet_pos['target'] or bullet_pos['target'] == 'enemy'
+    # return is_hit
+
+    # tolerence로 명중 판별
     dx = target_pos["x"] - bullet_pos["x"]
     dz = target_pos["z"] - bullet_pos["z"]
 
