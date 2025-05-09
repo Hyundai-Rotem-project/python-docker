@@ -11,4 +11,9 @@ tensorflow==2.10.0
 scikit-learn==1.2.2
 pillow==10.2.0
 albumentations==1.4.0
+<<<<<<< Updated upstream
 ultralytics==8.0.196  # YOLOv8
+=======
+ultralytics==8.0.196  # YOLOv8
+torch == 2.5.0
+>>>>>>> Stashed changes
