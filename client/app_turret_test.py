@@ -8,20 +8,14 @@ import time
 import json
 import modules.turret as turret
 import modules.is_near_enemy as is_near_enemy
+import modules.get_enemy_pos as get_enemy_pos
 import math
 
 app = Flask(__name__)
 
 DEBUG = True
 STATE_DEBUG = True
-
-# response = {
-#     'detections': filtered_results,
-#     'nearest_enemy': nearest_enemy,
-#     'fire_coordinates': fire_coordinates,
-#     'control': 'continue'
-# }
-
+ 
 
 # YOLO 모델 로드
 try:
@@ -51,26 +45,16 @@ obstacles = []  # /set_obstacles 데이터 저장
 latest_nearest_enemy = None
 MATCH_THRESHOLD = 3.0
 
-def calculate_map_coords(fov_horizontal, fov_vertical, player_pose, image_width, image_height, map_width, map_height, bbox):
-    """FOV, player_pose['y'], 이미지 픽셀 값으로 맵 비율과 사물 중심 X, Z 좌표 계산"""
-    camera_height = player_pose.get('y', 8)
-    width_real = 2 * camera_height * math.tan(math.radians(fov_horizontal / 2))
-    height_real = 2 * camera_height * math.tan(math.radians(fov_vertical / 2))
-    ratio_horizontal = (width_real / map_width) * 100
-    ratio_vertical = (height_real / map_height) * 100
-    x_center_pixel = (bbox[0] + bbox[2]) / 2
-    y_center_pixel = (bbox[1] + bbox[3]) / 2
-    meter_per_pixel_x = width_real / image_width
-    meter_per_pixel_y = height_real / image_height
-    x_relative_m = (x_center_pixel - image_width / 2) * meter_per_pixel_x
-    z_relative_m = (y_center_pixel - image_height / 2) * meter_per_pixel_y
-    x_map = player_pose.get('x', 60) + x_relative_m
-    z_map = player_pose.get('z', 57) + camera_height + z_relative_m
-    return {
-        'image_real_size': {'width': width_real, 'height': height_real},
-        'map_ratio': {'horizontal': ratio_horizontal, 'vertical': ratio_vertical},
-        'map_center': {'x': x_map, 'z': z_map}
-    }
+#정적인 적 - 가까운 적을 타격한 것을 표시하고 더이상 쏘지 않게 한다.
+dead_list =[]
+
+#3 FOV 및 카메라 설정
+FOV_HORIZONTAL = 50
+FOV_VERTICAL = 28
+IMAGE_WIDTH = 1920
+IMAGE_HEIGHT = 1080
+MAP_WIDTH = 300
+MAP_HEIGHT = 300
 
 @app.route('/dashboard')
 def dashboard():
@@ -95,7 +79,21 @@ def detect():
     results = model(image_path)
     detections = results[0].boxes.data.cpu().numpy()
 
-    target_classes = {0: "person", 2: "car", 7: "truck", 15: "rock"}
+    # 3. 탐지 결과 필터링
+    target_classes = {
+        0: 'car002', 1: 'car003', 2: 'car005', 3: 'human001',
+        4: 'rock001', 5: 'rock2', 6: 'tank', 7: 'wall001', 8: 'wall002'
+    }
+    img = Image.open(image_path).convert('RGB')
+    draw = ImageDraw.Draw(img)
+
+    try:
+        font = ImageFont.truetype("arial.ttf", size=20)
+    except:
+        font = ImageFont.load_default()
+
+    print("Player position:", player_data['pos'])
+    
     filtered_results = []
     for box in detections:
         class_id = int(box[5])
@@ -143,9 +141,8 @@ def detect():
     if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
 
     # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
-    # 가장 가까운 적 찾기
-    nearest_enemy = is_near_enemy.find_nearest_enemy(filtered_results, player_pos, obstacles)
-    print('nearest_enemy: 80, 94', nearest_enemy)
+    nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
+
     if nearest_enemy['state'] and first_action_state:
         try:
             # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
@@ -166,7 +163,14 @@ def detect():
         if STATE_DEBUG : print('2 🤩🤩action - first_action_state f', first_action_state)
         if STATE_DEBUG : print('2 🤩🤩action - hit_state -1', hit_state)
 
-    return jsonify(result_list)
+    # 💣 dead_list에 있는 적이면 무시
+    if nearest_enemy['state']:
+        ex = nearest_enemy['x']
+        ez = nearest_enemy['z']
+        if get_enemy_pos.is_already_dead(ex, ez, dead_list):
+            print("🧟‍♂️ 이미 사망한 타겟. 포격 제외.")
+            return jsonify({"status": "already_dead", "target": None})
+    return jsonify(filtered_results)
 
 @app.route('/info', methods=['POST'])
 def info():
@@ -234,7 +238,7 @@ def get_action():
         command = action_command.pop(0)
         if DEBUG: print(f"🔫 Action Command: {command}")
         
-        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
+        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.1:
             # reverse 끝나는 지점
             first_action_state = True
             hit_state = -1
@@ -269,6 +273,7 @@ def update_bullet():
     # 수정필요: 타겟 명중 여부 판단 tolerence -> class_name
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     if DEBUG: print('💥', is_hit)
+    # 명중 못했을 때 
     if not is_hit:
         time.sleep(5)
         hit_state = 0
@@ -290,6 +295,14 @@ def update_bullet():
     else:
         if DEBUG: print("Hit!!!!!")
         hit_state = 1
+        if is_hit:
+            print("🎯 Target HIT confirmed.")
+            # 💀 dead_list에 등록
+            dead_list.append({
+                "x" : impact_info['x'],
+                "z": impact_info['z']
+            })
+            print(dead_list)
         action_command = turret.get_reverse_action_command(
             player_data.get('turret_x', 0),
             player_data.get('turret_y', 0),
@@ -381,35 +394,85 @@ def init():
 
 @app.route('/start', methods=['GET'])
 def start():
-
     if DEBUG: print("🚀 /start command received")
     return jsonify({"control": ""})
 
-@app.route('/test_rotation', methods=['POST'])
-def test_rotation():
-    global action_command
-    if DEBUG: print('🚨 test_rotation >>>')
-    data = request.get_json()
-    rotation_type = data.get('type', 'Q')
-    count = data.get('count', 1)
+def wait_for_impact_confirm(timeout=3.0):
+    """/update_bullet로 명중 여부가 반영될 때까지 기다림"""
+    global hit_state
+    start_time = time.time()
+    print("⏳ 포격 후 명중 여부 확인 중...")
 
-    action_command = []
-    for _ in range(count):
-        action_command.append({"turret": rotation_type, "weight": 0.5})
-    action_command.append({"turret": rotation_type, "weight": 0.0})
+    while time.time() - start_time < timeout:
+        if hit_state in [0, 1]:  # 0=miss, 1=hit
+            print(f"✅ 명중 여부 확인 완료: hit_state={hit_state}")
+            return
+        time.sleep(0.1)  # 100ms 단위로 확인
 
-    test_info = {
-        'rotation_type': rotation_type,
-        'count': count,
-        'timestamp': time.strftime('%H:%M:%S'),
-        'rotation_desc': {
-            'Q': 'Left', 'E': 'Right', 'F': 'Down', 'R': 'Up'
-        }.get(rotation_type, 'Unknown')
-    }
-    if DEBUG: print(f"🔄 Testing {test_info['rotation_desc']} rotation ({rotation_type}) x {count}")
-    socketio.emit('rotation_test', test_info)
-    if DEBUG: print("action_command >>", action_command)
-    return jsonify({"status": "OK", "message": "Rotation test started"})
+    print("⚠️ 제한 시간 내 명중 여부 확인 실패")
+    
+@app.route('/start_rotation', methods=['POST'])
+def start_rotation():
+    global action_command,  player_data, obstacles, dead_list, latest_nearest_enemy
+    print('🚨 start_rotation >>>')
+    if DEBUG: print('🚨 start_rotation >>>')
+
+    for _ in range(36):  # 360도 회전 (10도씩)
+        # 1. 회전 명령 큐에 추가 (Q: 좌회전)
+        action_command.append({"turret": "Q", "weight": 0.1})
+        action_command.append({"turret": "Q", "weight": 0.0})  # 회전 멈춤
+
+        # 2. YOLO 탐지 요청 (클라이언트에서 이미지 주기적으로 보내줘야 함)
+        # 서버 내 이미지 경로로 예시 처리
+        image_path = 'temp_image.jpg'
+        try:
+            results = model(image_path, imgsz=640)
+            detections = results[0].boxes.data.cpu().numpy()
+        except:
+            continue  # 예외 발생 시 다음 회전으로
+
+        # 3. 탐지 결과 처리
+        filtered_results = []
+        target_classes = {0: 'car002', 1: 'tank'}
+        for box in detections:
+            class_id = int(box[5])
+            if class_id not in target_classes:
+                continue
+            bbox = [float(coord) for coord in box[:4]]
+            filtered_results.append({
+                'className': target_classes[class_id],
+                'bbox': bbox,
+                'confidence': float(box[4])
+            })
+
+        # 4. 가장 가까운 적 탐색
+        nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
+        if not nearest_enemy['state']:
+            continue  # 탐지된 적 없음
+        ex = nearest_enemy['x']
+        ez = nearest_enemy['z']
+        if get_enemy_pos.is_already_dead(ex, ez, dead_list):
+            print("🧟‍♂️ 이미 사망한 타겟. 포격 제외.")
+            continue
+
+        # 5. 포격 명령 추가
+        latest_nearest_enemy = nearest_enemy
+        firing_cmds = turret.get_action_command(
+            'auto',
+            player_data['pos'],
+            nearest_enemy,
+            turret_x_angle=player_data.get('turret_x', 0),
+            turret_y_angle=player_data.get('turret_y', 0),
+            player_y_angle=player_data.get('body_y', 0)
+        )
+        action_command += firing_cmds
+
+        wait_for_impact_confirm(timeout=3.0)
+
+        print("🎯 타겟 포착 및 포격 명령 추가됨:", nearest_enemy)
+        break  # 하나만 포착하고 종료하려면 break / 전체 순회하려면 제거
+
+    return jsonify({"status": "OK", "message": "Auto rotation and targeting initiated."})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
