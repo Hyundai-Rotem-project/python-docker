@@ -30,6 +30,7 @@ def generate_action_command(type, diff, difault_w):
     return action_command
 
 def get_angles(from_pos, to_pos):
+    print("11111111", from_pos)
     dx = to_pos['x'] - from_pos['x']
     dy = to_pos['y'] - from_pos['y']
     dz = to_pos['z'] - from_pos['z']
