@@ -7,7 +7,6 @@ from ultralytics import YOLO
 import time
 import json
 import modules.turret as turret
-import modules.is_near_enemy as is_near_enemy
 import modules.get_enemy_pos as get_enemy_pos
 import math
 
@@ -343,6 +342,41 @@ def update_obstacle():
     # if DEBUG: print(f"🪨 Obstacle data: {json.dumps(obstacles, indent=2)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received', 'obstacles_count': len(obstacles)})
 
+def load_map_to_obstacles(map_path='modules/test_turret.map'):
+    import json
+    import os
+
+    if not os.path.exists(map_path):
+        print(f"❌ Map file not found: {map_path}")
+        return []
+
+    with open(map_path, 'r') as f:
+        map_data = json.load(f)
+
+    prefab_size = {
+        'Car002': (3.0, 3.0),
+        'Car003': (3.0, 3.0),
+        'Tank': (4.0, 4.0),
+        'Rock001': (2.0, 2.0),
+        'Wall001': (5.0, 1.0),
+        # 필요시 추가
+    }
+
+    converted = []
+    for obj in map_data.get('obstacles', []):
+        name = obj['prefabName']
+        pos = obj['position']
+        width, depth = prefab_size.get(name, (2.0, 2.0))
+        converted.append({
+            "x_min": pos['x'] - width / 2,
+            "x_max": pos['x'] + width / 2,
+            "z_min": pos['z'] - depth / 2,
+            "z_max": pos['z'] + depth / 2,
+            "className": name.lower()
+        })
+
+    return converted
+
 @app.route('/init', methods=['GET'])
 def init():
     global first_action_state, hit_state
@@ -374,8 +408,14 @@ def init():
 
 @app.route('/start', methods=['GET'])
 def start():
+    global obstacles
     if DEBUG: print("🚀 /start command received")
-    return jsonify({"control": ""})
+    map_path = 'modules/test_turret.map'
+    obstacles = load_map_to_obstacles(map_path)
+    print(obstacles)
+    print(f"🗺️ Map loaded: {len(obstacles)} obstacles from {map_path}")
+
+    return jsonify({"control": "", "message": f"{len(obstacles)} obstacles loaded from map"})
 
 def wait_for_impact_confirm(timeout=3.0):
     """/update_bullet로 명중 여부가 반영될 때까지 기다림"""

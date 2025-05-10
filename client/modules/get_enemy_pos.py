@@ -54,6 +54,10 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
     # print('obstacle_info', obstacle_info)
     
     obstacle_info = calculate_relative_angle(player_data, obstacle_data)
+    if not obstacle_info:
+        print("⚠️ No obstacles to match with detections.")
+        return detected_results  # 그대로 반환 (center 없음)
+    
     obstacle_angle = [item['angle'] for item in obstacle_info]
         
     for index, det in enumerate(detected_results):
@@ -61,10 +65,12 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
 
         bbox_angle = calculate_bbox_angle(bbox)
         # 🚨 closest_index 동일하게 나오는 경우 있음 -> 각 detected_results가 다른 index 갖도록 수정 필요
+        if not obstacle_angle:
+            continue
+
         closest_index = min(range(len(obstacle_angle)), key=lambda i: abs(obstacle_angle[i] - bbox_angle))
         # print('bboxxxxx', bbox_angle, closest_index)
         obs = obstacle_info[closest_index]
-
         det['center'] = obs['center']
 
     # print("detected_results !!!", detected_results)
