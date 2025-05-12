@@ -372,6 +372,7 @@ def load_map_to_obstacles(map_path='modules/test_turret.map'):
             "x_max": pos['x'] + width / 2,
             "z_min": pos['z'] - depth / 2,
             "z_max": pos['z'] + depth / 2,
+            "y_center": pos['y'], # y좌표 추가
             "className": name.lower()
         })
 
