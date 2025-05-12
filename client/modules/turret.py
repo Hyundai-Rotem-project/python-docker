@@ -91,8 +91,12 @@ def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None
 
 # 명중 확인
 def is_hit(target_pos, bullet_pos, tolerance=5.5):
+    if not target_pos:
+        print("⚠️ is_hit() skipped: target_pos is None")
+        return False
+    
     print("🤷‍♂️target_pos", target_pos)
-    print("🤷bullte_pos", bullet_pos)
+    print("🤷bullet_pos", bullet_pos)
     
     # # className으로 명중 판별
     # is_hit = target_pos['className'] == bullet_pos['target'] or bullet_pos['target'] == 'enemy'

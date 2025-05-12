@@ -7,7 +7,7 @@ from ultralytics import YOLO
 import time
 import json
 import modules.turret as turret
-import modules.get_enemy_pos as get_enemy_pos
+import modules.get_enemy_pos_update as get_enemy_pos
 import math
 
 app = Flask(__name__)
@@ -122,9 +122,8 @@ def detect():
     if STATE_DEBUG : print('1 🤩🤩first_action_state', first_action_state)
     if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
 
-    # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
     nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
-
+    print("🔍 nearest_enemy result:", nearest_enemy)
     if nearest_enemy['state'] and first_action_state:
         try:
             # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
@@ -244,6 +243,10 @@ def update_bullet():
         if DEBUG: print("🚫 Invalid bullet data")
         return jsonify({"status": "ERROR", "message": "Invalid request data"}), 400
 
+    if not latest_nearest_enemy:
+        print("⚠️ No valid enemy to compare bullet impact. Skipping is_hit() check.")
+        return jsonify({"status": "skipped", "message": "No target set"})
+
     print(f"💥 Bullet Impact at X={data.get('x')}, Y={data.get('y')}, Z={data.get('z')}, Target={data.get('hit')}")
     impact_info = {
         'x': data.get('x'),
@@ -342,7 +345,7 @@ def update_obstacle():
     # if DEBUG: print(f"🪨 Obstacle data: {json.dumps(obstacles, indent=2)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received', 'obstacles_count': len(obstacles)})
 
-def load_map_to_obstacles(map_path='modules/test_turret.map'):
+def load_map_to_obstacles(map_path='modules/test_turret_wilderness.map'):
     import json
     import os
 
@@ -373,7 +376,8 @@ def load_map_to_obstacles(map_path='modules/test_turret.map'):
             "z_min": pos['z'] - depth / 2,
             "z_max": pos['z'] + depth / 2,
             "y_center": pos['y'], # y좌표 추가
-            "className": name.lower()
+            "className": name.lower(),
+            "center": (pos['x'], pos['y'], pos['z'],)
         })
 
     return converted
@@ -411,9 +415,9 @@ def init():
 def start():
     global obstacles
     if DEBUG: print("🚀 /start command received")
-    map_path = 'modules/test_turret.map'
+    map_path = 'modules/test_turret_wilderness.map'
     obstacles = load_map_to_obstacles(map_path)
-    print(obstacles)
+    # print(obstacles)
     print(f"🗺️ Map loaded: {len(obstacles)} obstacles from {map_path}")
 
     return jsonify({"control": "", "message": f"{len(obstacles)} obstacles loaded from map"})
@@ -443,13 +447,13 @@ def start_rotation():
         action_command.append({"turret": "Q", "weight": 0.1})
         action_command.append({"turret": "Q", "weight": 0.0})  # 회전 멈춤
 
-        # 2. YOLO 탐지 요청 (클라이언트에서 이미지 주기적으로 보내줘야 함)
-        # 서버 내 이미지 경로로 예시 처리
+        # 2. YOLO 탐지 → 큐 생성
         image_path = 'temp_image.jpg'
         try:
             results = model(image_path, imgsz=640)
             detections = results[0].boxes.data.cpu().numpy()
-        except:
+        except Exception as e:
+            print(f"❌ YOLO 실패: {e}")
             continue  # 예외 발생 시 다음 회전으로
 
         # 3. 탐지 결과 처리
@@ -466,33 +470,49 @@ def start_rotation():
                 'confidence': float(box[4])
             })
 
-        # 4. 가장 가까운 적 탐색
-        nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
-        if not nearest_enemy['state']:
-            continue  # 탐지된 적 없음
-        ex = nearest_enemy['x']
-        ez = nearest_enemy['z']
-        if get_enemy_pos.is_already_dead(ex, ez, dead_list):
-            print("🧟‍♂️ 이미 사망한 타겟. 포격 제외.")
-            continue
+        # 3. 가장 가까운 적 탐색
+        enemy_queue = get_enemy_pos.find_all_valid_enemies(filtered_results, player_data, obstacles)
+        print(f"🎯 유효 타겟 수: {len(enemy_queue)}")
+
+    # 4. 하나씩 타겟을 꺼내서 포격
+        for enemy in enemy_queue:
+            ex, ez = enemy['x'], enemy['z']
+            if get_enemy_pos.is_already_dead(ex, ez, dead_list):
+                print("🧟‍♂️ 이미 사망한 타겟. 포격 제외.")
+                continue
 
         # 5. 포격 명령 추가
-        latest_nearest_enemy = nearest_enemy
-        firing_cmds = turret.get_action_command(
-            player_data['pos'],
-            nearest_enemy,
-            turret_x_angle=player_data.get('turret_x', 0),
-            turret_y_angle=player_data.get('turret_y', 0),
-            player_y_angle=player_data.get('body_y', 0)
-        )
-        action_command += firing_cmds
+            latest_nearest_enemy = enemy
+            retry_count = 0
+            while retry_count < 3:
+                try:
+                    firing_cmds = turret.get_action_command(
+                        player_data['pos'],
+                        enemy,
+                        turret_x_angle=player_data.get('turret_x', 0),
+                        turret_y_angle=player_data.get('turret_y', 0),
+                        player_y_angle=player_data.get('body_y', 0)
+                    )
+                    action_command += firing_cmds
+                    print(f"🎯 포격 명령 추가됨: {enemy} (시도 {retry_count +1})")
+                    
+                    wait_for_impact_confirm(timeout=3.0)
+                    if hit_state == 1:
+                        print("✅ 명중 확인, 다음 타겟 진행")
+                        break
+                    else:
+                        retry_count += 1
+                        print(f"🔁 명중 실패, 재시도 {retry_count}/3")
+                except ValueError as e:
+                    print(f"🚫 포격 명령 생성 실패: {e}")
+                    continue
+            if retry_count >= 3:
+                print("⚠️ 재시도 초과. 다음 타겟으로 이동")
+                continue
+            else:
+                break
 
-        wait_for_impact_confirm(timeout=3.0)
-
-        print("🎯 타겟 포착 및 포격 명령 추가됨:", nearest_enemy)
-        break  # 하나만 포착하고 종료하려면 break / 전체 순회하려면 제거
-
-    return jsonify({"status": "OK", "message": "Auto rotation and targeting initiated."})
+    return jsonify({"status": "OK", "message": "Rotation targeting sequence initiated."})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
