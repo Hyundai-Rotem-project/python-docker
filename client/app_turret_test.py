@@ -10,19 +10,22 @@ import modules.turret as turret
 import modules.is_near_enemy as is_near_enemy
 import modules.get_enemy_pos as get_enemy_pos
 import math
+import os
 
 app = Flask(__name__)
 
 DEBUG = True
-STATE_DEBUG = True
+STATE_DEBUG = False
 
-# response = {
-#     'detections': filtered_results,
-#     'nearest_enemy': nearest_enemy,
-#     'fire_coordinates': fire_coordinates,
-#     'control': 'continue'
-# }
+OBSTACLES_MAP = []
+file_path = os.path.join(os.path.dirname(__file__), '..', 'NewMap_wilderness.map')
+file_path = os.path.abspath(file_path)
 
+with open(file_path, "r", encoding="utf-8") as f:
+    map_data = json.load(f)
+
+OBSTACLES_MAP = map_data['obstacles']
+# print(map_data['obstacles'])
 
 # YOLO 모델 로드
 try:
@@ -48,18 +51,9 @@ action_command = []
 player_data = {'pos': {'x': 60, 'y': 10, 'z': 57}}  # 기본 위치 설정
 destination = {}
 impact_info = {}
-obstacles = []  # /set_obstacles 데이터 저장
-obstacles_center = []
+obstacles = []  # /update_obstacles 데이터 저장
 latest_nearest_enemy = None
 MATCH_THRESHOLD = 3.0
-
-#3 FOV 및 카메라 설정
-FOV_HORIZONTAL = 50
-FOV_VERTICAL = 28
-IMAGE_WIDTH = 1920
-IMAGE_HEIGHT = 1080
-MAP_WIDTH = 300
-MAP_HEIGHT = 300
 
 @app.route('/dashboard')
 def dashboard():
@@ -70,7 +64,7 @@ first_action_state = True
 hit_state = -1
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_data, obstacles, latest_nearest_enemy, action_command, destination, first_action_state, hit_state
+    global player_data, obstacles, latest_nearest_enemy, action_command, destination, first_action_state, hit_state, OBSTACLES_MAP
     print('🌍 detect >>>')
 
     # 1. 이미지 수신
@@ -133,13 +127,14 @@ def detect():
     if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
 
     # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
+    # nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, OBSTACLES_MAP)
     nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
-    # print('📀 nearest_enemy', nearest_enemy)
+    print('📀 nearest_enemy', nearest_enemy)
     if nearest_enemy['state'] and first_action_state:
         try:
             # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
             latest_nearest_enemy = nearest_enemy
-            action_command = turret.get_action_command('detect',
+            action_command = turret.get_action_command(
                 player_data['pos'],
                 nearest_enemy,
                 turret_x_angle=player_data['turret_x'],
@@ -262,7 +257,7 @@ def update_bullet():
         hit_state = 0
         time.sleep(5)
         try:
-            action_command = turret.get_action_command('nohit',
+            action_command = turret.get_action_command(
                 player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
                 latest_nearest_enemy,
                 turret_x_angle=player_data.get('turret_x', 0),
@@ -306,7 +301,7 @@ def set_destination():
         x, y, z = map(float, data["destination"].split(","))
         destination = {'x': x, 'y': y, 'z': z}
         if DEBUG: print(f"🎯 Destination set to: {destination}")
-        action_command = turret.get_action_command('setdestination',
+        action_command = turret.get_action_command(
             player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
             destination,
             turret_x_angle=player_data.get('turret_x', 0),
@@ -322,7 +317,7 @@ def set_destination():
 
 @app.route('/update_obstacle', methods=['POST'])
 def update_obstacle():
-    global obstacles, obstacles_center
+    global obstacles
     if DEBUG: print('🚨 update_obstacle >>>')
     data = request.get_json()
     if not data or 'obstacles' not in data:
@@ -331,7 +326,7 @@ def update_obstacle():
         return jsonify({'status': 'error', 'message': 'No data received'}), 400
 
     obstacles = data['obstacles']
-    print(f"🪨 Obstacle data updated: {obstacles}")
+    print(f"🪨 Obstacle data updated:")
     # logging.debug(f"Obstacle data updated: {json.dumps(obstacles, indent=2)}")
     # if DEBUG: print(f"🪨 Obstacle data: {json.dumps(obstacles, indent=2)}")
     return jsonify({'status': 'success', 'message': 'Obstacle data received', 'obstacles_count': len(obstacles)})
@@ -343,7 +338,7 @@ def init():
 
     config = {
         "startMode": "start",
-        "blStartX": 60,
+        "blStartX": 70,
         "blStartY": 10,
         "blStartZ": 45,
         "rdStartX": 60,

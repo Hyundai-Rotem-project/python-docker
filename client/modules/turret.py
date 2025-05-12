@@ -44,8 +44,8 @@ def get_angles(from_pos, to_pos):
 
     return flat_distance, yaw, pitch
 
-def get_action_command(type, player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
-    print('🐟🐟', type, player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
+def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None, turret_y_angle=None, player_y_angle=None):
+    print('🐟🐟', player_pos, turret_x_angle, turret_y_angle, player_y_angle, target_pos)
     action_command = []
 
     flat_distance, target_yaw, target_pitch = get_angles(player_pos, target_pos)

@@ -32,12 +32,11 @@ def calculate_relative_angle(player_data, obstacle_info):
         facing_angle = round((player_facing['x'] + 180) % 360 - 180, 2)
         obstacle_angle = round(math.degrees(math.atan2(dx, dz)), 2)
 
-        relative_angle = obstacle_angle + facing_angle
+        relative_angle = obstacle_angle - facing_angle
 
         target = obstacle_info[index]
         target['angle'] = relative_angle
         target['center'] = (xc, zc)
-        # print('🤩', index, relative_angle, (xc, zc))
         
     return obstacle_info
 
@@ -48,10 +47,6 @@ def calculate_bbox_angle(bbox):
     return angle_x
 
 def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
-    print('🎶🤢detected_results', detected_results)
-    # print('🎶🤢player_data', player_data)
-    # print('obstacle_info', obstacle_info)
-    
     obstacle_info = calculate_relative_angle(player_data, obstacle_data)
     obstacle_angle = [item['angle'] for item in obstacle_info]
         
@@ -61,33 +56,24 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
         bbox_angle = calculate_bbox_angle(bbox)
         # 🚨 closest_index 동일하게 나오는 경우 있음 -> 각 detected_results가 다른 index 갖도록 수정 필요
         closest_index = min(range(len(obstacle_angle)), key=lambda i: abs(obstacle_angle[i] - bbox_angle))
-        # print('bboxxxxx', bbox_angle, closest_index)
         obs = obstacle_info[closest_index]
 
         det['center'] = obs['center']
-
-    # print("detected_results !!!", detected_results)
+        
     return detected_results
 
-# 🎶🤢detected_results 예시
-# {'id': 0, 'className': 'car003', 
-#  'bbox': [729.469482421875, 545.0945434570312, 865.4412231445312, 665.6178588867188], 
-#  'confidence': 0.8793855905532837, 'color': '#0000FF', 
-# 'filled': False, 'updateBoxWhileMoving': False, 
-# 'center': (56.05139923095703, 99.60943603515625)}
-
+# ✅ cx = 80.431396484375
+# ✅ cz = 94.69261932373047
 
 def find_nearest_enemy(detections, player_data, obstacles):
     """가장 가까운 적 반환 (1200m 이내 적만 valid_enemies로 간주)"""
+    print("obstacles map", player_data)
     detected_results = match_bbox_to_obstacle(detections, player_data, obstacles)
-    # print('🎶🤢 player_data', player_data)
-    # nearest_enemy = find_nearest_enemy(filtered_results, player_data['pos'], obstacles)
     player_pos = player_data['pos']
     logging.debug(f"Starting find_nearest_enemy with {len(detections)} detections, player_pos: {player_pos}, obstacles: {len(obstacles)}")
     
     enemy_classes = {'car002', 'tank'}  # 적 클래스
     detected_classes = {det['className'] for det in detections if det['className'] in enemy_classes and det['confidence'] >= 0.3}
-    # print('😡???', detected_classes)
     logging.debug(f"Detected classes: {detected_classes}")
     
     if not detected_classes:
@@ -100,7 +86,6 @@ def find_nearest_enemy(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        # print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['center'][0]
             center_z = detected['center'][1]
@@ -149,5 +134,4 @@ def find_nearest_enemy(detections, player_data, obstacles):
         logging.info("No nearest enemy found after filtering")
         return {'message': 'No valid enemy found within 1200m', 'state': False}
     
-    # print('nearest_enemy', nearest_enemy)
     return nearest_enemy
