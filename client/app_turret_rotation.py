@@ -183,7 +183,8 @@ def info():
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
-    global player_data
+    global player_data, is_rotating
+    is_rotating = False
     if DEBUG: print('🚨 update_position >>>')
     data = request.get_json()
     if not data or "position" not in data:
@@ -205,9 +206,11 @@ def update_position():
             dz = z - destination['z']
             distance =math.sqrt(dx**2 + dz**2)
 
-            if distance < 45:
+            if distance < 45 and not is_rotating:
+                is_rotating = True
                 print("🎯 목적지 도착! 자동 회전 시작.")
-                start_rotation()
+                start_rotation_threadsafe()
+
         return jsonify({"status": "OK", "current_position": player_data['pos']})
     except Exception as e:
         if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
@@ -490,12 +493,16 @@ def angle_diff(new, old):
     # 0 ~ 180도는 그대로, 181~359도는 반시계 방향 (Q 명령 시)
     return diff if diff < 180 else diff - 360 # -180 ~ +180 범위
 
+def start_rotation_threadsafe():
+    import threading
+    threading.Thread(target=start_rotation).start()
+
 @app.route('/start_rotation', methods=['POST'])
 def start_rotation():
     """
     turret을 좌측으로 10도 회전하며 총 360도 회전 후 중지
     """
-    global action_command,  player_data
+    global action_command,  player_data, is_rotating
     print('🚨 start_rotation >>>')
     if DEBUG: print('🚨 start_rotation >>>')
 
@@ -529,7 +536,7 @@ def start_rotation():
             print(f"✅ 터렛 회전 완료: {total_rotated:.2f}°")
             print("누적회전값 이상. 강제 종료")
             break
-
+        is_rotating = False #상태 초기화
     return jsonify({"status": "OK", "message": f"터렛이 총 {total_rotated:.2f}도 회전 완료 후 중지했습니다."})
 
 if __name__ == '__main__':
