@@ -98,10 +98,6 @@ def is_hit(target_pos, bullet_pos, tolerance=5.5):
     print("🤷‍♂️target_pos", target_pos)
     print("🤷bullet_pos", bullet_pos)
     
-    # # className으로 명중 판별
-    # is_hit = target_pos['className'] == bullet_pos['target'] or bullet_pos['target'] == 'enemy'
-    # return is_hit
-
     # tolerence로 명중 판별
     dx = target_pos["x"] - bullet_pos["x"]
     dz = target_pos["z"] - bullet_pos["z"]
@@ -119,6 +115,6 @@ def get_reverse_action_command(turret_x_angle, turret_y_angle, player_x_angle, p
     # 수평(Q/E) / 수직(R/F)
     hor_action = generate_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
     ver_action = generate_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
-    # action_command = [*hor_action, *ver_action]
-    action_command.append({"turret": "Q", "weight": 0.1}) # 도리도리 안하고 360도 로만 돌게 함
+    action_command = [*hor_action, *ver_action]
+    action_command.append({"turret": "Q", "weight": 0.1}) 
     return action_command

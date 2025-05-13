@@ -128,13 +128,13 @@ def detect():
         try:
             # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
             latest_nearest_enemy = nearest_enemy
-            action_command = turret.get_action_command(
-                player_data['pos'],
-                nearest_enemy,
-                turret_x_angle=player_data['turret_x'],
-                turret_y_angle=player_data['turret_y'],
-                player_y_angle=player_data['body_y']
-            )
+            # action_command = turret.get_action_command(
+            #     player_data['pos'],
+            #     nearest_enemy,
+            #     turret_x_angle=player_data['turret_x'],
+            #     turret_y_angle=player_data['turret_y'],
+            #     player_y_angle=player_data['body_y']
+            # )
         
             print('📀 action_command', action_command)
             # first_action_state = False
@@ -157,6 +157,7 @@ def detect():
 @app.route('/info', methods=['POST'])
 def info():
     if DEBUG: print('🚨 info >>>')
+    print('🚨 info_called>>>')
     global player_data
     data = request.get_json(force=True)
     if not data:
@@ -175,6 +176,8 @@ def info():
         'body_y': data.get('playerBodyY'),
         'body_z': data.get('playerBodyZ'),
     }
+    print("🐜🐜1. turret_y : ", data.get('playerTurretY'))
+
     # if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
 
@@ -265,21 +268,14 @@ def update_bullet():
         'timestamp': time.strftime('%H:%M:%S')
     }
 
-    bx, bz = impact_info['x'], impact_info['z']
-    tx, tz = latest_nearest_enemy['x'], latest_nearest_enemy['z']
-    distance = math.sqrt((bx -tx)**2 + (bz- tz)**2)
-
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     hit_target = impact_info.get("target", "").lower()
     print("💕💕💕hit_target", hit_target)
-    expected_target = 'tank'
-
+    excepted_target = latest_nearest_enemy.get("className","").lower()
     if DEBUG: print('💥', is_hit)
-    
-    # 3m 이내면 적 명중으로 간주
-    if is_hit or distance <3.0:
      # 🎯 리워드/패널티 로직
-        if expected_target == "tank":
+    if is_hit:
+        if "tank" in hit_target:
             score += 10  # 적 맞춤 → 보상
             print("✅ 적 명중! +10점")
 
@@ -287,15 +283,15 @@ def update_bullet():
             score -= 10  # 아군 명중 → 패널티
             print("❌ 아군 명중! -10점")
         hit_state = 1
-        dead_list.append({"x": bx, "z": bz})
-        action_command = turret.get_reverse_action_command(
-            player_data.get('turret_x', 0),
-            player_data.get('turret_y', 0),
-            player_data.get('body_x', 0),
-            player_data.get('body_y', 0),
-        )
+        dead_list.append({"x": impact_info['x'], "z": impact_info['z']})
+        # action_command = turret.get_reverse_action_command(
+        #     player_data.get('turret_x', 0),
+        #     player_data.get('turret_y', 0),
+        #     player_data.get('body_x', 0),
+        #     player_data.get('body_y', 0),
+        # )
     else:
-        if expected_target == "tank":
+        if "tank" in hit_target:
             score -= 5  # 적 놓침 → 패널티
             print("❌ 적을 놓침! -5점")
         else:
@@ -303,17 +299,16 @@ def update_bullet():
             print("✅ 아군 안 맞춤! +5점")
         hit_state = 0
         time.sleep(5)
-        # 재공격 명령
-        try:
-            action_command = turret.get_action_command(
-                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                latest_nearest_enemy,
-                turret_x_angle=player_data.get('turret_x', 0),
-                turret_y_angle=player_data.get('turret_y', 0),
-                player_y_angle=player_data.get('body_y', 0)
-            )
-        except ValueError as e:
-            action_command = []
+        # try:
+        #     action_command = turret.get_action_command(
+        #         player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
+        #         latest_nearest_enemy,
+        #         turret_x_angle=player_data.get('turret_x', 0),
+        #         turret_y_angle=player_data.get('turret_y', 0),
+        #         player_y_angle=player_data.get('body_y', 0)
+        #     )
+        # except ValueError as e:
+        #     action_command = []
 
     print(f"📊 현재 점수: {score}")
     socketio.emit('bullet_impact', impact_info)
@@ -322,13 +317,13 @@ def update_bullet():
         hit_state = 0
         time.sleep(5)
         try:
-            action_command = turret.get_action_command(
-                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                latest_nearest_enemy,
-                turret_x_angle=player_data.get('turret_x', 0),
-                turret_y_angle=player_data.get('turret_y', 0),
-                player_y_angle=player_data.get('body_y', 0)
-            )
+            # action_command = turret.get_action_command(
+            #     player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
+            #     latest_nearest_enemy,
+            #     turret_x_angle=player_data.get('turret_x', 0),
+            #     turret_y_angle=player_data.get('turret_y', 0),
+            #     player_y_angle=player_data.get('body_y', 0)
+            # )
             if DEBUG: print('💥 is_hit >> action_command:', action_command)
         except ValueError as e:
             if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
@@ -374,13 +369,13 @@ def set_destination():
         x, y, z = map(float, data["destination"].split(","))
         destination = {'x': x, 'y': y, 'z': z}
         if DEBUG: print(f"🎯 Destination set to: {destination}")
-        action_command = turret.get_action_command(
-            player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-            destination,
-            turret_x_angle=player_data.get('turret_x', 0),
-            turret_y_angle=player_data.get('turret_y', 0),
-            player_y_angle=player_data.get('body_y', 0)
-        )
+        # action_command = turret.get_action_command(
+        #     player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
+        #     destination,
+        #     turret_x_angle=player_data.get('turret_x', 0),
+        #     turret_y_angle=player_data.get('turret_y', 0),
+        #     player_y_angle=player_data.get('body_y', 0)
+        # )
         if DEBUG: print('action_command:', action_command)
         return jsonify({"status": "OK", "destination": destination})
     except Exception as e:
@@ -495,88 +490,53 @@ def wait_for_impact_confirm(timeout=3.0):
 
     print("⚠️ 제한 시간 내 명중 여부 확인 실패")
 
-def auto_start_rotation():
-    time.sleep(1)
-    requests.post("http://localhost:5000/start_rotation")
+def angle_diff(new, old):
+    """new - old를 기준으로, 실제 회전한 각도 계산 (0~360 wrap-around 대응)"""
+    diff = (new - old + 360) % 360
+    # 0 ~ 180도는 그대로, 181~359도는 반시계 방향 (Q 명령 시)
+    return diff if diff < 180 else diff - 360 # -180 ~ +180 범위
 
 @app.route('/start_rotation', methods=['POST'])
 def start_rotation():
-    global action_command,  player_data, obstacles, dead_list, latest_nearest_enemy
+    """
+    turret을 좌측으로 10도 회전하며 총 360도 회전 후 중지
+    """
+    global action_command,  player_data
     print('🚨 start_rotation >>>')
     if DEBUG: print('🚨 start_rotation >>>')
 
-    for _ in range(36):  # 360도 회전 (10도씩)
-        # 1. 회전 명령 큐에 추가 (Q: 좌회전)
-        action_command.append({"turret": "Q", "weight": 0.1})
-        action_command.append({"turret": "Q", "weight": 0.0})  # 회전 멈춤
+    total_rotated = 0.0
+    prev_angle = player_data.get("turret_y", 0) #  수평 회전 각도
+    print("prev_angle", prev_angle)
 
-        # 2. YOLO 탐지 → 큐 생성
-        image_path = 'temp_image.jpg'
-        try:
-            results = model(image_path, imgsz=640)
-            detections = results[0].boxes.data.cpu().numpy()
-        except Exception as e:
-            print(f"❌ YOLO 실패: {e}")
-            continue  # 예외 발생 시 다음 회전으로
+    while total_rotated < 360:
+        # 1. 회전 명령 큐에 추가
+        action_command.append({"turret": "Q", "weight": 0.25})
+        action_command.append({"turret": "Q", "weight": 0.0})
 
-        # 3. 탐지 결과 처리
-        filtered_results = []
-        target_classes = {0: 'car002', 1: 'tank'}
-        for box in detections:
-            class_id = int(box[5])
-            if class_id not in target_classes:
-                continue
-            bbox = [float(coord) for coord in box[:4]]
-            filtered_results.append({
-                'className': target_classes[class_id],
-                'bbox': bbox,
-                'confidence': float(box[4])
-            })
+        # 2. 회전 반영 대기
+        time.sleep(3)
 
-        # 3. 가장 가까운 적 탐색
-        enemy_queue = get_enemy_pos.find_all_valid_enemies(filtered_results, player_data, obstacles)
-        print(f"🎯 유효 타겟 수: {len(enemy_queue)}")
+        # 3. 최신 터렛 각도 읽기
+        curr_angle = player_data.get("turret_y", 0)
+        print(f"🐜 turret_y: {curr_angle:.2f}")
 
-    # 4. 하나씩 타겟을 꺼내서 포격
-        for enemy in enemy_queue:
-            ex, ez = enemy['x'], enemy['z']
-            if get_enemy_pos.is_already_dead(ex, ez, dead_list):
-                print("🧟‍♂️ 이미 사망한 타겟. 포격 제외.")
-                continue
+        # 4. 각도 차이 계산 (wrap-around 대응)
+        delta = angle_diff(curr_angle, prev_angle)
+        print(delta, "delta")
+        total_rotated += abs(delta)
+        prev_angle = curr_angle
 
-        # 5. 포격 명령 추가
-            latest_nearest_enemy = enemy
-            retry_count = 0
-            while retry_count < 3:
-                try:
-                    firing_cmds = turret.get_action_command(
-                        player_data['pos'],
-                        enemy,
-                        turret_x_angle=player_data.get('turret_x', 0),
-                        turret_y_angle=player_data.get('turret_y', 0),
-                        player_y_angle=player_data.get('body_y', 0)
-                    )
-                    action_command += firing_cmds
-                    print(f"🎯 포격 명령 추가됨: {enemy} (시도 {retry_count +1})")
-                    
-                    wait_for_impact_confirm(timeout=3.0)
-                    if hit_state == 1:
-                        print("✅ 명중 확인, 다음 타겟 진행")
-                        break
-                    else:
-                        retry_count += 1
-                        print(f"🔁 명중 실패, 재시도 {retry_count}/3")
-                except ValueError as e:
-                    print(f"🚫 포격 명령 생성 실패: {e}")
-                    continue
-            if retry_count >= 3:
-                print("⚠️ 재시도 초과. 다음 타겟으로 이동")
-                continue
-            else:
-                break
+        print(f"📐 현재 각도: {curr_angle:.2f}°, 누적 회전량: {total_rotated:.2f}°")
+        print("⏸️ 3초 대기")
+        time.sleep(3)
 
-    return jsonify({"status": "OK", "message": "Rotation targeting sequence initiated."})
+        if total_rotated >= 360:
+            print(f"✅ 터렛 회전 완료: {total_rotated:.2f}°")
+            print("누적회전값 이상. 강제 종료")
+            break
+
+    return jsonify({"status": "OK", "message": f"터렛이 총 {total_rotated:.2f}도 회전 완료 후 중지했습니다."})
 
 if __name__ == '__main__':
-    threading.Thread(target=auto_start_rotation).start()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

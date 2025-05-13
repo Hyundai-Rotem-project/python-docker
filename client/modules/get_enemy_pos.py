@@ -48,7 +48,7 @@ def calculate_bbox_angle(bbox):
     return angle_x
 
 def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
-    print('🎶🤢detected_results', detected_results)
+    #print('🎶🤢detected_results', detected_results)
     # print('🎶🤢player_data', player_data)
     # print('obstacle_info', obstacle_info)
     
