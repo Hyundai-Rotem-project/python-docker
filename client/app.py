@@ -355,7 +355,8 @@ def start():
     global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
     map_path = 'client/NewMap.map'
-    obstacles_from_map = get_obstacles.load_map_to_obstacles(map_path)
+    obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
+    print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
 
 @app.route('/test_rotation', methods=['POST'])

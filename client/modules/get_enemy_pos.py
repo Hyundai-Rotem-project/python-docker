@@ -59,6 +59,7 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
             if cond:
                 min_angle = angel_diff
                 det['position'] = obs['position']
+                det['id'] = obs['id']
 
     return detected_results
 
@@ -82,6 +83,7 @@ def find_nearest_enemy(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
+        print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']
@@ -96,7 +98,8 @@ def find_nearest_enemy(detections, player_data, obstacles):
                     'className': detected['className'],
                     # 'confidence': 1.0,  # /set_obstacles 데이터 신뢰도
                     # 'source': 'obstacles',
-                    'distance': distance
+                    'distance': distance,
+                    'id': detected['id']
                 })
                 logging.debug(f"Valid enemy added: x={center_x:.2f}, z={center_z:.2f}, distance={distance:.2f}m")
             else:
@@ -106,6 +109,8 @@ def find_nearest_enemy(detections, player_data, obstacles):
         logging.info("No matching enemies within 1200m")
         return {'message': 'No matching enemy found within 1200m', 'state': False}
     
+    print('valid_enemies', valid_enemies)
+    sorted_valid_enemies = sorted(valid_enemies, key=lambda x: x['distance'])
     min_distance = float('inf')
     nearest_enemy = None
     for enemy in valid_enemies:
