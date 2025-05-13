@@ -1,0 +1,36 @@
+class StereoImageFilter(left_dir, right_dir, log_path=None, model_path=None)
+left_dir  : .../Tank Challenge/capture_images/L
+right_dir : .../Tank Challenge/capture_images/R
+model_path -> 'best.pt'로 수정
+
+get_result() return : filtered_log_data, left_filtered_detect_result, right_filtered_detect_result 
+실행 시 스테레오 이미지 디렉토리의 이미지의 '파일명 000_00.png'을 로그.txt의 "Time"으로 변경 시킨 후 "Tank"가 탐지된 이미지만 남기고 삭제
+L,R에는 같은 이름의 이미지만 남는다. 탱크가 탐지된 이미지의 로그만 "filtered_log_data"로 return
+
+
+
+결과 : 이미지, log_data 필터링 시켜줌
+/Tank Challenge/capture_images/L
+  123_12.png -> 123.45.png
+
+class StereoRegression.py
+
+get_log_data() 실행 시 StereoImageFilter실행 후 log_data return
+
+get_log_data():
+        '''
+        return log_data (pd.DataFrame) :
+            ['Time', 'Distance', 'Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z',
+            'Player_Speed', 'Player_Health', 'Player_Turret_X', 'Player_Turret_Y',
+            'Player_Body_X', 'Player_Body_Y', 'Player_Body_Z', 'TurretCam_X',
+            'TurretCam_Y', 'TurretCam_Z', 'StereoL_X', 'StereoL_Y', 'StereoL_Z',
+            'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X',
+            'StereoR_Y', 'StereoR_Z', 'StereoR_Roll', 'StereoR_Pitch',
+            'StereoR_Yaw', 'Enemy_Pos_X', 'Enemy_Pos_Y', 'Enemy_Pos_Z',
+            'Enemy_Speed', 'Enemy_Health', 'Enemy_Turret_X', 'Enemy_Turret_Y',
+            'Enemy_Body_X', 'Enemy_Body_Y', 'Enemy_Body_Z', 'bx_left', 'by_left',
+            'bx_right', 'by_right', 'box_size_left', 'box_size_right', 'disparity',
+            'estimated_distance', 'est_dir_x', 'est_dir_y', 'est_dir_z',
+            'real_dir_X', 'real_dir_Y', 'real_dir_Z'],
+        '''
+
