@@ -149,7 +149,7 @@ class DistCalculator:
         return midpoint
     
 
-class StereoRegression:
+class StereoRegPreprocess:
     def __init__(self, left_dir, right_dir, log_path, camera_intrinsic=None):
         self.left_dir = left_dir
         self.right_dir = right_dir
