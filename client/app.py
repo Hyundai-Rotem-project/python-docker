@@ -7,8 +7,8 @@ from ultralytics import YOLO
 import time
 import json
 import modules.turret as turret
-import modules.is_near_enemy as is_near_enemy
 import modules.get_enemy_pos as get_enemy_pos
+import modules.get_obstacles as get_obstacles
 import math
 import os
 
@@ -16,16 +16,6 @@ app = Flask(__name__)
 
 DEBUG = True
 STATE_DEBUG = False
-
-OBSTACLES_MAP = []
-file_path = os.path.join(os.path.dirname(__file__), '..', 'NewMap_wilderness.map')
-file_path = os.path.abspath(file_path)
-
-with open(file_path, "r", encoding="utf-8") as f:
-    map_data = json.load(f)
-
-OBSTACLES_MAP = map_data['obstacles']
-# print(map_data['obstacles'])
 
 # YOLO 모델 로드
 try:
@@ -51,7 +41,8 @@ action_command = []
 player_data = {'pos': {'x': 60, 'y': 10, 'z': 57}}  # 기본 위치 설정
 destination = {}
 impact_info = {}
-obstacles = []  # /update_obstacles 데이터 저장
+obstacles = []  # /update_obstacle 데이터 저장
+obstacles_from_map = []
 latest_nearest_enemy = None
 MATCH_THRESHOLD = 3.0
 
@@ -66,7 +57,8 @@ TURRET_HIT = -1
 
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_data, obstacles, latest_nearest_enemy, action_command, destination, TURRET_FIRST_ROTATING, TURRET_HIT, OBSTACLES_MAP
+    global player_data, latest_nearest_enemy, action_command, destination, obstacles_from_map
+    global TURRET_FIRST_ROTATING, TURRET_HIT
     print('🌍 detect >>>')
 
     # 1. 이미지 수신
@@ -86,8 +78,8 @@ def detect():
 
     # 3. 탐지 결과 필터링
     target_classes = {
-        0: 'car002', 1: 'car003', 2: 'car005', 3: 'human001',
-        4: 'rock001', 5: 'rock2', 6: 'tank', 7: 'wall001', 8: 'wall002'
+        0: 'Car002', 1: 'Car003', 2: 'Car005', 3: 'Human001',
+        4: 'Rock001', 5: 'Rock2', 6: 'Tank001', 7: 'Wall001', 8: 'Wall002'
     }
     class_colors = {
         'car002': '#FF0000', 'car003': '#0000FF', 'car005': '#00FF00', 'human001': 'orange',
@@ -130,7 +122,7 @@ def detect():
 
     nearest_enemy = {'state': False}
     if MOVING == 'PAUSE':
-        nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
+        nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles_from_map)
     print('📀 nearest_enemy', nearest_enemy)
     if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
         try:
@@ -359,8 +351,11 @@ def init():
 
 @app.route('/start', methods=['GET'])
 def start():
-
+    global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
+    map_path = 'client/NewMap.map'
+    obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
+    print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
 
 @app.route('/test_rotation', methods=['POST'])
