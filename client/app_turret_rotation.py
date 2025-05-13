@@ -176,7 +176,7 @@ def info():
         'body_y': data.get('playerBodyY'),
         'body_z': data.get('playerBodyZ'),
     }
-    print("🐜🐜1. turret_y : ", data.get('playerTurretY'))
+    print("🐜🐜1. turret_x : ", data.get('playerTurretX'))
 
     # if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
@@ -369,13 +369,7 @@ def set_destination():
         x, y, z = map(float, data["destination"].split(","))
         destination = {'x': x, 'y': y, 'z': z}
         if DEBUG: print(f"🎯 Destination set to: {destination}")
-        # action_command = turret.get_action_command(
-        #     player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-        #     destination,
-        #     turret_x_angle=player_data.get('turret_x', 0),
-        #     turret_y_angle=player_data.get('turret_y', 0),
-        #     player_y_angle=player_data.get('body_y', 0)
-        # )
+
         if DEBUG: print('action_command:', action_command)
         return jsonify({"status": "OK", "destination": destination})
     except Exception as e:
@@ -506,20 +500,20 @@ def start_rotation():
     if DEBUG: print('🚨 start_rotation >>>')
 
     total_rotated = 0.0
-    prev_angle = player_data.get("turret_y", 0) #  수평 회전 각도
+    prev_angle = player_data.get("turret_x", 0) #  수평 회전 각도
     print("prev_angle", prev_angle)
 
     while total_rotated < 360:
         # 1. 회전 명령 큐에 추가
-        action_command.append({"turret": "Q", "weight": 0.25})
+        action_command.append({"turret": "Q", "weight": 0.23}) # 10도씩 회전 36번 정지
         action_command.append({"turret": "Q", "weight": 0.0})
 
         # 2. 회전 반영 대기
         time.sleep(3)
 
         # 3. 최신 터렛 각도 읽기
-        curr_angle = player_data.get("turret_y", 0)
-        print(f"🐜 turret_y: {curr_angle:.2f}")
+        curr_angle = player_data.get("turret_x", 0)
+        print(f"🐜 turret_x: {curr_angle:.2f}")
 
         # 4. 각도 차이 계산 (wrap-around 대응)
         delta = angle_diff(curr_angle, prev_angle)
