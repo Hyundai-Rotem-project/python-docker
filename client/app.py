@@ -610,6 +610,8 @@ def detect():
 
 @app.route('/info', methods=['POST'])
 def info():
+    print('🚨 info >>>')
+    global PLAYER_DATA
     data = request.get_json(force=True)
     if not data:
         print("?? No JSON received")
@@ -873,6 +875,7 @@ def info():
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
+    print('🚨 update_position >>>')
     data = request.get_json()
     if not data or "position" not in data:
         print("?? Missing position data")
@@ -947,6 +950,7 @@ def get_action():
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
+    print('🚨 update_bullet >>>')
     data = request.get_json()
     if not data:
         print("?? Invalid bullet data")
@@ -958,7 +962,11 @@ def update_bullet():
 
 @app.route('/set_destination', methods=['POST'])
 def set_destination():
+    print('🚨 set_destination >>>')
+    global DESTINATION
+    global action_command
     data = request.get_json()
+    action_command = []
     if not data or "destination" not in data:
         print("?? Missing destination data")
         logging.error("Missing destination data")
