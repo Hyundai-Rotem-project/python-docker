@@ -9,6 +9,9 @@ import json
 import modules.turret as turret
 import modules.get_enemy_pos as get_enemy_pos
 import math
+import pdb
+import threading
+import requests
 
 app = Flask(__name__)
 
@@ -17,12 +20,8 @@ STATE_DEBUG = True
  
 
 # YOLO 모델 로드
-try:
-    model = YOLO('best.pt')
 
-except Exception as e:
-    raise RuntimeError(f"YOLO model loading failed: {str(e)}")
-
+model = YOLO('./best.pt')
 
 EXCLUDE_PATHS = ("/info", "/start", "/update_position", "/get_move", "/get_action")
 class PathFilter(logging.Filter):
@@ -197,6 +196,15 @@ def update_position():
         player_data.setdefault('body_y', 0)
         player_data.setdefault('body_z', 0)
         if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
+
+        if destination:
+            dx = x - destination['x']
+            dz = z - destination['z']
+            distance =math.sqrt(dx**2 + dz**2)
+
+            if distance < 45:
+                print("🎯 목적지 도착! 자동 회전 시작.")
+                start_rotation()
         return jsonify({"status": "OK", "current_position": player_data['pos']})
     except Exception as e:
         if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
@@ -259,6 +267,7 @@ def update_bullet():
 
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     hit_target = impact_info.get("target", "").lower()
+    print("💕💕💕hit_target", hit_target)
     excepted_target = latest_nearest_enemy.get("className","").lower()
     if DEBUG: print('💥', is_hit)
      # 🎯 리워드/패널티 로직
@@ -266,6 +275,7 @@ def update_bullet():
         if "tank" in hit_target:
             score += 10  # 적 맞춤 → 보상
             print("✅ 적 명중! +10점")
+
         else:
             score -= 10  # 아군 명중 → 패널티
             print("❌ 아군 명중! -10점")
@@ -476,7 +486,11 @@ def wait_for_impact_confirm(timeout=3.0):
         time.sleep(0.1)  # 100ms 단위로 확인
 
     print("⚠️ 제한 시간 내 명중 여부 확인 실패")
-    
+
+def auto_start_rotation():
+    time.sleep(1)
+    requests.post("http://localhost:5000/start_rotation")
+
 @app.route('/start_rotation', methods=['POST'])
 def start_rotation():
     global action_command,  player_data, obstacles, dead_list, latest_nearest_enemy
@@ -556,4 +570,5 @@ def start_rotation():
     return jsonify({"status": "OK", "message": "Rotation targeting sequence initiated."})
 
 if __name__ == '__main__':
+    threading.Thread(target=auto_start_rotation).start()
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

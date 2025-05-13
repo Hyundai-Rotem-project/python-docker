@@ -41,14 +41,21 @@ def calculate_relative_angle(player_data, obstacle_info):
         
     return obstacle_info
 
-def calculate_bbox_angle(bbox):
+def calculate_bbox_angle(bbox, turret_y):
     bbox_cx = (bbox[0] + bbox[2])/2
+
     dx = (bbox_cx - IMAGE_WIDTH / 2) / (IMAGE_WIDTH / 2)
-    angle_x = dx * (FOV_HORIZONTAL / 2)
-    return angle_x
+    
+    #시야각 비율만큼 회전된 각도 계산
+    local_angle = dx * (FOV_HORIZONTAL / 2)
+    
+    #turret의 회전각을 기준으로 보정
+    global_angle = (turret_y + local_angle + 360) % 360
+
+    return global_angle
 
 def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
-    print('🎶🤢detected_results', detected_results)
+    # print('🎶🤢detected_results', detected_results)
     # print('🎶🤢player_data', player_data)
     # print('obstacle_info', obstacle_info)
     
@@ -59,7 +66,6 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
         print("⚠️ No obstacles to match with detections.")
         return detected_results  # 그대로 반환 (center 없음)
     
-        
     for index, det in enumerate(detected_results):
         bbox = det['bbox']
 
@@ -92,7 +98,7 @@ def find_nearest_enemy(detections, player_data, obstacles):
     player_pos = player_data['pos']
     logging.debug(f"Starting find_nearest_enemy with {len(detections)} detections, player_pos: {player_pos}, obstacles: {len(obstacles)}")
     
-    enemy_classes = {'car002', 'tank'}  # 적 클래스
+    enemy_classes = {'tank'}  # 적 클래스
     detected_classes = {det['className'] for det in detections if det['className'] in enemy_classes and det['confidence'] >= 0.3}
     # print('😡???', detected_classes)
     logging.debug(f"Detected classes: {detected_classes}")
