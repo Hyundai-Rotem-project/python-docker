@@ -63,6 +63,57 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
 
     return detected_results
 
+def get_enemy_list(detections, player_data, obstacles):
+    """가장 가까운 적 반환 (1200m 이내 적만 valid_enemies로 간주)"""
+    detected_results = match_bbox_to_obstacle(detections, player_data, obstacles)
+    player_pos = player_data['pos']
+    logging.debug(f"Starting find_nearest_enemy with {len(detections)} detections, player_pos: {player_pos}, obstacles: {len(obstacles)}")
+    
+    enemy_classes = {'Car002', 'Tank001'}  # 적 클래스
+    detected_classes = {det['className'] for det in detections if det['className'] in enemy_classes and det['confidence'] >= 0.3}
+    logging.debug(f"Detected classes: {detected_classes}")
+    
+    if not detected_classes:
+        logging.info("No enemy classes detected")
+        return {'message': 'No enemy detected', 'state': False}
+    
+    if not player_pos:
+        logging.warning("Player position not set")
+        return {'message': 'Player position not set', 'state': False}
+
+    valid_enemies = []
+    for detected in detected_results:
+        print('detected', detected)
+        if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
+            center_x = detected['position']['x']
+            center_y = detected['position']['y']
+            center_z = detected['position']['z']
+            # 플레이어와의 거리 계산
+            distance = math.sqrt((center_x - player_pos['x'])**2 + (center_z - player_pos['z'])**2)
+            if distance <= 1200:  # 1200m 이내인 경우만 추가
+                valid_enemies.append({
+                    'x': center_x,
+                    'z': center_z,
+                    'y': center_y,
+                    'className': detected['className'],
+                    # 'confidence': 1.0,  # /set_obstacles 데이터 신뢰도
+                    # 'source': 'obstacles',
+                    'distance': distance,
+                    'id': detected['id']
+                })
+                logging.debug(f"Valid enemy added: x={center_x:.2f}, z={center_z:.2f}, distance={distance:.2f}m")
+            else:
+                logging.debug(f"Enemy excluded (too far): x={center_x:.2f}, z={center_z:.2f}, distance={distance:.2f}m")
+
+    if not valid_enemies:
+        logging.info("No matching enemies within 1200m")
+        return {'message': 'No matching enemy found within 1200m', 'state': False}
+    
+    print('valid_enemies', valid_enemies)
+    sorted_valid_enemies = sorted(valid_enemies, key=lambda x: x['distance'])
+
+    return sorted_valid_enemies
+
 def find_nearest_enemy(detections, player_data, obstacles):
     """가장 가까운 적 반환 (1200m 이내 적만 valid_enemies로 간주)"""
     detected_results = match_bbox_to_obstacle(detections, player_data, obstacles)
