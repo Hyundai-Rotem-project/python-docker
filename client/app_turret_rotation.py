@@ -42,6 +42,7 @@ impact_info = {}
 obstacles = []  # /set_obstacles 데이터 저장
 obstacles_center = []
 latest_nearest_enemy = None
+is_rotating = False
 MATCH_THRESHOLD = 3.0
 
 #정적인 적 - 가까운 적을 타격한 것을 표시하고 더이상 쏘지 않게 한다.
@@ -184,7 +185,7 @@ def info():
 @app.route('/update_position', methods=['POST'])
 def update_position():
     global player_data, is_rotating
-    is_rotating = False
+    # is_rotating = False
     if DEBUG: print('🚨 update_position >>>')
     data = request.get_json()
     if not data or "position" not in data:
@@ -230,7 +231,7 @@ def get_move():
 @app.route('/get_action', methods=['GET'])
 def get_action():
     global action_command, latest_nearest_enemy, first_action_state, hit_state
-    if DEBUG: print('🚨 get_action >>>', action_command)
+    if DEBUG: print('🚨 get_action >>>')
     if action_command:
         first_action_state = False
         command = action_command.pop(0)
@@ -535,9 +536,11 @@ def start_rotation():
         if total_rotated >= 360:
             print(f"✅ 터렛 회전 완료: {total_rotated:.2f}°")
             print("누적회전값 이상. 강제 종료")
+            action_command.append({"turret": "STOP", "weight": 0.0})
             break
-        is_rotating = False #상태 초기화
-    return jsonify({"status": "OK", "message": f"터렛이 총 {total_rotated:.2f}도 회전 완료 후 중지했습니다."})
+    
+         # ❌ jsonify,request, session, current_app 사용 금지: 스레드 안에서 사용 불가_ 백그라운드 작업
+    return
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
