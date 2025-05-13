@@ -60,11 +60,13 @@ def dashboard():
     if DEBUG: print('🚨 dashboard >>>')
     return render_template('dashboard.html')
 
-first_action_state = True
-hit_state = -1
+MOVING = 'PAUSE'
+TURRET_FIRST_ROTATING = True
+TURRET_HIT = -1
+
 @app.route('/detect', methods=['POST'])
 def detect():
-    global player_data, obstacles, latest_nearest_enemy, action_command, destination, first_action_state, hit_state, OBSTACLES_MAP
+    global player_data, obstacles, latest_nearest_enemy, action_command, destination, TURRET_FIRST_ROTATING, TURRET_HIT, OBSTACLES_MAP
     print('🌍 detect >>>')
 
     # 1. 이미지 수신
@@ -123,14 +125,16 @@ def detect():
             'updateBoxWhileMoving': False
         })
 
-    if STATE_DEBUG : print('1 🤩🤩first_action_state', first_action_state)
-    if STATE_DEBUG : print('1 🤩🤩hit_state', hit_state)
+    if STATE_DEBUG : print('1 🤩🤩TURRET_FIRST_ROTATING', TURRET_FIRST_ROTATING)
+    if STATE_DEBUG : print('1 🤩🤩TURRET_HIT', TURRET_HIT)
 
     # 수정필요: 이동이 완전히 멈춘 상태가 되면 -> is_near_enemy.find_nearest_enemy 호출 (state 필요)
-    # nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, OBSTACLES_MAP)
-    nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
+    nearest_enemy = {'state': False}
+    if MOVING == 'PAUSE':
+        # nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, OBSTACLES_MAP)
+        nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles)
     print('📀 nearest_enemy', nearest_enemy)
-    if nearest_enemy['state'] and first_action_state:
+    if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
         try:
             # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
             latest_nearest_enemy = nearest_enemy
@@ -143,13 +147,13 @@ def detect():
             )
         
             print('📀 action_command', action_command)
-            # first_action_state = False
+            # TURRET_FIRST_ROTATING = False
         except ValueError as e:
             print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
         
-        if STATE_DEBUG : print('2 🤩🤩action - first_action_state f', first_action_state)
-        if STATE_DEBUG : print('2 🤩🤩action - hit_state -1', hit_state)
+        if STATE_DEBUG : print('2 🤩🤩action - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
+        if STATE_DEBUG : print('2 🤩🤩action - TURRET_HIT -1', TURRET_HIT)
 
     return jsonify(filtered_results)
 
@@ -213,20 +217,22 @@ def get_move():
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
-    global action_command, latest_nearest_enemy, first_action_state, hit_state
+    global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
+    global action_command, latest_nearest_enemy
     if DEBUG: print('🚨 get_action >>>', action_command)
     if action_command:
-        first_action_state = False
+        TURRET_FIRST_ROTATING = False
         command = action_command.pop(0)
         if DEBUG: print(f"🔫 Action Command: {command}")
         
-        if hit_state == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
+        if TURRET_HIT == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
             # reverse 끝나는 지점
-            first_action_state = True
-            hit_state = -1
+            TURRET_FIRST_ROTATING = True
+            TURRET_HIT = -1
+            MOVING = 'MOVING'
             # print("impact_control False", action_command)
-            if STATE_DEBUG : print('5 🤩🤩reverse end - first_action_state t', first_action_state)
-            if STATE_DEBUG : print('5 🤩🤩reverse end - hit_state -1', hit_state)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
 
         return jsonify(command)
     else:
@@ -234,7 +240,7 @@ def get_action():
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
-    global destination, impact_info, player_data, action_command, latest_nearest_enemy, hit_state
+    global destination, impact_info, player_data, action_command, latest_nearest_enemy, TURRET_HIT
     if DEBUG: print('🚨 update_bullet >>>')
     data = request.get_json()
     action_command = []
@@ -254,26 +260,20 @@ def update_bullet():
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
     if DEBUG: print('💥', is_hit)
     if not is_hit:
-        hit_state = 0
+        TURRET_HIT = 0
         time.sleep(5)
         try:
-            action_command = turret.get_action_command(
-                player_data.get('pos', {'x': 60, 'y': 10, 'z': 57}),
-                latest_nearest_enemy,
-                turret_x_angle=player_data.get('turret_x', 0),
-                turret_y_angle=player_data.get('turret_y', 0),
-                player_y_angle=player_data.get('body_y', 0)
-            )
+            action_command = turret.get_action_command(player_data['pos'], latest_nearest_enemy, impact_info)
             if DEBUG: print('💥 is_hit >> action_command:', action_command)
         except ValueError as e:
             if DEBUG: print(f"🚫 Error generating action command: {str(e)}")
             action_command = []
         
-        if STATE_DEBUG : print('3 🤩🤩re action - first_action_state f', first_action_state)
-        if STATE_DEBUG : print('3 🤩🤩re action - hit_state 0', hit_state)
+        if STATE_DEBUG : print('3 🤩🤩re action - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
+        if STATE_DEBUG : print('3 🤩🤩re action - TURRET_HIT 0', TURRET_HIT)
     else:
         if DEBUG: print("💥 Hit!!!!!")
-        hit_state = 1
+        TURRET_HIT = 1
         action_command = turret.get_reverse_action_command(
             player_data.get('turret_x', 0),
             player_data.get('turret_y', 0),
@@ -281,8 +281,8 @@ def update_bullet():
             player_data.get('body_y', 0),
         )
         
-        if STATE_DEBUG : print('4 🤩🤩reverse - first_action_state f', first_action_state)
-        if STATE_DEBUG : print('4 🤩🤩reverse - hit_state 1', hit_state)
+        if STATE_DEBUG : print('4 🤩🤩reverse - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
+        if STATE_DEBUG : print('4 🤩🤩reverse - TURRET_HIT 1', TURRET_HIT)
 
     socketio.emit('bullet_impact', impact_info)
     return jsonify({"status": "OK", "message": "Bullet impact data received"})
@@ -333,7 +333,7 @@ def update_obstacle():
 
 @app.route('/init', methods=['GET'])
 def init():
-    global first_action_state, hit_state
+    global TURRET_FIRST_ROTATING, TURRET_HIT
     if DEBUG: print('🚨 init >>>')
 
     config = {
@@ -354,8 +354,8 @@ def init():
         "lux": 30000
     }
 
-    first_action_state = True
-    hit_state = -1
+    TURRET_FIRST_ROTATING = True
+    TURRET_HIT = -1
 
     if DEBUG: print(f"🛠️ Initialization config sent via /init: {config}")
     return jsonify(config)
