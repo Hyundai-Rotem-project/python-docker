@@ -3,10 +3,11 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import cv2, os
 from StereoImageFilter import StereoImageFilter
-from sklearn.linear_model import LinearRegression
+
 
 class DistCalculator:
     def __init__(self, camera_intrinsic=None):        
@@ -149,7 +150,7 @@ class DistCalculator:
         return midpoint
     
 
-class StereoRegPreprocess:
+class StereoPreprocess:
     def __init__(self, left_dir, right_dir, log_path, camera_intrinsic=None):
         self.left_dir = left_dir
         self.right_dir = right_dir
@@ -213,7 +214,6 @@ class StereoRegPreprocess:
             estimated_dist : 객체까지 계산된 거리 float
             estimated_dir : 객체 방향 벡터 [x,y,z]
         """
-        print(type(player_pos))
         positions = pd.concat([player_pos, estimated_object_pos], axis=1)
         estimated_dist=[]
         estimated_dir=[]
@@ -369,15 +369,65 @@ class StereoRegPreprocess:
         #log_data = pd.concat([log_data,real_dir],axis=1)
 
         return log_data
+
+
+
+class StereoRegression:
+    def __init__(self):
+        return
+
+    def regression_model(self, log_data):
+        '''
+        return log_data (pd.DataFrame) :
+            ['Time', 'Distance', 'Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z',
+            'Player_Speed', 'Player_Health', 'Player_Turret_X', 'Player_Turret_Y',
+            'Player_Body_X', 'Player_Body_Y', 'Player_Body_Z', 'TurretCam_X',
+            'TurretCam_Y', 'TurretCam_Z', 'StereoL_X', 'StereoL_Y', 'StereoL_Z',
+            'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X',
+            'StereoR_Y', 'StereoR_Z', 'StereoR_Roll', 'StereoR_Pitch',
+            'StereoR_Yaw', 'Enemy_Pos_X', 'Enemy_Pos_Y', 'Enemy_Pos_Z',
+            'Enemy_Speed', 'Enemy_Health', 'Enemy_Turret_X', 'Enemy_Turret_Y',
+            'Enemy_Body_X', 'Enemy_Body_Y', 'Enemy_Body_Z', 'bx_left', 'by_left',
+            'bx_right', 'by_right', 'box_size_left', 'box_size_right', 'disparity',
+            'estimated_distance', 'est_dir_x', 'est_dir_y', 'est_dir_z',
+            'real_dir_X', 'real_dir_Y', 'real_dir_Z'],
+        '''
+        log_data=log_data 
+        # 종속 변수(y)와 독립 변수(X) 분리
+        y = log_data[['Distance', 'Enemy_Pos_X', 'Enemy_Pos_Y', 'Enemy_Pos_Z']]
+        X = log_data[['Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z','Player_Body_X', 'Player_Body_Y', 'Player_Body_Z',
+                      'StereoL_X', 'StereoL_Y', 'StereoL_Z', 'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X','StereoR_Y', 'StereoR_Z',
+                      'bx_left', 'by_left','bx_right', 'by_right', 'box_size_left', 'box_size_right', 'disparity', 
+                      'estimated_distance', 'est_dir_x', 'est_dir_y', 'est_dir_z']]
+        
+
+        # 학습/테스트 데이터 분할
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # 모델 정의 및 학습 (Random Forest Regressor 사용)
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+
+        # 예측
+        y_pred = model.predict(X_test)
+
+        # 성능 평가
+        mse = mean_squared_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+
+        print(f"Mean Squared Error (MSE): {mse:.3f}")
+        print(f"R² Score: {r2:.3f}")
+
+        return model, mse, r2, y_test, y_pred
+
 """
 사용 예시
-from StereoRegression import StereoRegression
+from StereoRegression import StereoPreprocess, StereoRegression
 left_dir = "C:/Users/Dhan/Documents/Tank Challenge/capture_images/L"
 right_dir = "C:/Users/Dhan/Documents/Tank Challenge/capture_images/R"
 log_path = "C:/Users/Dhan/Documents/Tank Challenge/log_data/tank_info_log.txt"
-Reg = StereoRegression(left_dir, right_dir, log_path)
-log_data = Reg.get_log_data()
+Preprocess = StereoPreprocess(left_dir, right_dir, log_path)
+log_data = Preprocess.get_log_data()
+Reg = StereoRegression()
+model, mse, rw = Reg.regression_model(log_data)
 """
-
-
-
