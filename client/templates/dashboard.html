@@ -69,8 +69,15 @@
             const entry = document.createElement('div');
             entry.className = 'impact-entry';
             entry.innerHTML = `
-                [${data.timestamp}] Impact at (${data.x.toFixed(2)}, ${data.y.toFixed(2)}, ${data.z.toFixed(2)}) 
-                - ${data.target}
+                [${data.timestamp}] Impact at (X: ${data.x.toFixed(2)}, Y: ${data.y.toFixed(2)}, Z: ${data.z.toFixed(2)})
+                <br>
+                &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                Taget Position (X: ${data.tx.toFixed(2)}, Y: ${data.ty.toFixed(2)}, Z: ${data.tz.toFixed(2)})
+                <br>
+                &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+                Result: <span class="${data.hit ? 'hit' : 'miss'}">
+                     ${data.hit ? 'HIT' : 'MISS'}
+               
             `;
             
             impactLog.insertBefore(entry, impactLog.firstChild);
