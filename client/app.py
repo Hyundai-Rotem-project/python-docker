@@ -118,7 +118,7 @@ def nms(detections, iou_threshold=0.5):
 def detect():
     global player_data, latest_nearest_enemy, action_command, destination, obstacles_from_map
     global TURRET_FIRST_ROTATING, TURRET_HIT
-    print('?? detect >>>')
+    print('🌍 detect >>>')
 
     # 1. 이미지 수신
     image = request.files.get('image')
@@ -178,34 +178,32 @@ def detect():
     if STATE_DEBUG : print('1 ????TURRET_FIRST_ROTATING', TURRET_FIRST_ROTATING)
     if STATE_DEBUG : print('1 ????TURRET_HIT', TURRET_HIT)
 
-    # state가 STOPPED일 때만 action_command 생성
-    if state == "STOPPED":
-        print("?? Current state: STOPPED, searching for enemies...")
+    nearest_enemy = {'state': False}
+    enemy_list = []
+    dead_enemy_list = []
+    if STATE == 'PAUSE':
+        # enemy_list = get_enemy_pos.get_enemy_list(filtered_results, player_data, obstacles_from_map)
         nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles_from_map)
-        print('?? nearest_enemy', nearest_enemy)
-        if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
-            try:
-                latest_nearest_enemy = nearest_enemy
-                print("?? Generating action command for enemy:", nearest_enemy)
-                action_command = turret.get_action_command(
-                    player_data['pos'],
-                    nearest_enemy,
-                    turret_x_angle=player_data['turret_x'],
-                    turret_y_angle=player_data['turret_y'],
-                    player_y_angle=player_data['body_y']
-                )
-                print('?? action_command', action_command)
-            except ValueError as e:
-                print(f"?? Error generating action command: {str(e)}")
-                action_command = []
-            
-            if STATE_DEBUG : print('2 ????action - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
-            if STATE_DEBUG : print('2 ????action - TURRET_HIT -1', TURRET_HIT)
-    else:
-        # 이동 중에는 action_command 비우기
-        action_command = []
-
-    filtered_results = nms(filtered_results)
+    print('📀 nearest_enemy', nearest_enemy)
+    if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
+        try:
+            # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
+            latest_nearest_enemy = nearest_enemy
+            action_command = turret.get_action_command(
+                player_data['pos'],
+                nearest_enemy,
+                turret_x_angle=player_data['turret_x'],
+                turret_y_angle=player_data['turret_y'],
+                player_y_angle=player_data['body_y']
+            )
+        
+            print('📀 action_command', action_command)
+        except ValueError as e:
+            print(f"🚫 Error generating action command: {str(e)}")
+            action_command = []
+        
+        if STATE_DEBUG : print('2 🤩🤩action - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
+        if STATE_DEBUG : print('2 🤩🤩action - TURRET_HIT -1', TURRET_HIT)
 
     return jsonify(filtered_results)
 
@@ -358,70 +356,83 @@ def info():
 
     return jsonify(status="success", control=control, weight=weight)
 
-@app.route('/update_position', methods=['POST'])
-def update_position():
-    global current_position, last_position, state, destination, player_data
+# @app.route('/update_position', methods=['POST'])
+# def update_position():
+#     global player_data
+#     if DEBUG: print('🚨 update_position >>>')
+#     data = request.get_json()
+#     if not data or "position" not in data:
+#         if DEBUG: print("🚫 Missing position data")
+#         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
 
-    if DEBUG: print('🚨 update_position >>>')
+#     try:
+#         x, y, z = map(float, data["position"].split(","))
+#         player_data['pos'] = {'x': x, 'y': y, 'z': z}
+#         player_data.setdefault('turret_x', 0)
+#         player_data.setdefault('turret_y', 0)
+#         player_data.setdefault('body_x', 0)
+#         player_data.setdefault('body_y', 0)
+#         player_data.setdefault('body_z', 0)
+#         if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
+#         return jsonify({"status": "OK", "current_position": player_data['pos']})
+#     except Exception as e:
+#         if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
+#         return jsonify({"status": "ERROR", "message": str(e)}), 400
 
-    data = request.get_json()
-    if not data or "position" not in data:
-        return jsonify({'status': 'ERROR', 'message': 'Missing position data'}), 400
-    try:
-        x, y, z = map(float, data["position"].split(","))
-        player_data['pos'] = {'x': x, 'y': y, 'z': z}
-        player_data.setdefault('turret_x', 0)
-        player_data.setdefault('turret_y', 0)
-        player_data.setdefault('body_x', 0)
-        player_data.setdefault('body_y', 0)
-        player_data.setdefault('body_z', 0)
-        current_position = (x, z)
-        if last_position:
-            dx, dz = x - last_position[0], z - last_position[1]
-            print(f"?? Movement change: dx={dx:.6f}, dz={dz:.6f}")
-        if destination:
-            dx = destination['x']
-            dz = destination['z']
-            z_diff = abs(z - dz)
-            direction_angle = math.degrees(math.atan2(dz - z, dx - x))
-            print(f"?? Position updated: {current_position}, target angle: {direction_angle:.2f}°, z_diff: {z_diff:.2f}m")
-        else:
-            print(f"?? Position updated: {current_position}")
-        return jsonify(status="OK", current_position=current_position)
-    except Exception as e:
-        return jsonify({'status': 'ERROR', 'message': str(e)}), 400
+# @app.route('/get_move', methods=['GET'])
+# def get_move():
+#     if DEBUG: print('🚨 get_move >>>')
+#     global move_command
+#     if move_command:
+#         command = move_command.pop(0)
+#         if DEBUG: print(f"🚗 Move Command: {command}")
+#         return jsonify(command)
+#     else:
+#         return jsonify({"move": "STOP", "weight": 1.0})
     
-@app.route('/get_move', methods=['GET'])
-def get_move():
-    # /info에서 계산된 제어값을 그대로 반환
-    return jsonify(move=last_control, weight=last_weight)
-
-@app.route('/get_action', methods=['GET'])
+@app.route('/get_action', methods=['POST'])
 def get_action():
     global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
     global action_command, latest_nearest_enemy
-    if DEBUG: print('?? get_action >>>', action_command)
-    print("state :"+str(state))
+    data = request.get_json(force=True)
+
+    position = data.get("position", {})
+    turret = data.get("turret", {})
+
+    pos_x = position.get("x", 0)
+    pos_y = position.get("y", 0)
+    pos_z = position.get("z", 0)
+
+    turret_x = turret.get("x", 0)
+    turret_y = turret.get("y", 0)
+
+    print(f"📨 Position received: x={pos_x}, y={pos_y}, z={pos_z}")
+    print(f"🎯 Turret received: x={turret_x}, y={turret_y}")
     
-    # state가 STOPPED일 때만 action_command 반환
-    if state == "STOPPED":
-        if action_command:
-            TURRET_FIRST_ROTATING = False
-            command = action_command.pop(0)
-            if DEBUG: print(f"?? Action Command: {command}")
-            if TURRET_HIT == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
-                TURRET_FIRST_ROTATING = True
-                TURRET_HIT = -1
-                MOVING = 'MOVING'
-                if STATE_DEBUG : print('5 ????reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
-                if STATE_DEBUG : print('5 ????reverse end - TURRET_HIT -1', TURRET_HIT)
-            return jsonify(command)
-        else:
-            return jsonify({"turret": "", "weight": 0.0})
+    if action_command:
+        TURRET_FIRST_ROTATING = False
+        command = action_command.pop(0)
+        if DEBUG: print(f"🔫 Action Command: {command}")
+        
+        if TURRET_HIT == 1 and command['turretQE']['command'] == 'STOP':
+            # reverse 끝나는 지점
+            TURRET_FIRST_ROTATING = True
+            TURRET_HIT = -1
+            MOVING = 'MOVING'
+            # print("impact_control False", action_command)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
+            if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
+
     else:
-        # 이동 중에는 항상 빈 명령 반환
-        return jsonify({"turret": "", "weight": 0.0})
-    
+        command = {
+            "moveWS": {"command": "STOP", "weight": 1.0},
+            "moveAD": {"command": "", "weight": 0.0},
+            "turretQE": {"command": "", "weight": 0.0},
+            "turretRF": {"command": "", "weight": 0.0},
+            "fire": False
+        }
+
+    return jsonify(command)
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():

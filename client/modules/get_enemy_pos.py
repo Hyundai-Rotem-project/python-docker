@@ -22,7 +22,6 @@ def calculate_relative_angle(player_data, obstacle_info):
 
     for index, obs in enumerate(obstacle_info):
         position = obs['position']
-    
 
         # 벡터: player → obstacle
         dx = position['x'] - player_pos['x']
@@ -161,23 +160,21 @@ def find_nearest_enemy(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        if detected['position'] is None:
-            print(f"❌ position None: {detected}")
-            continue
-        print('detected', detected)
+        # print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']
             center_z = detected['position']['z']
             # 플레이어와의 거리 계산
             distance = math.sqrt((center_x - player_pos['x'])**2 + (center_z - player_pos['z'])**2)
-            print(f"적: {detected['className']} | 적좌표: ({center_x:.2f}, {center_z:.2f}) | 플레이어: ({player_pos['x']:.2f}, {player_pos['z']:.2f}) | 거리: {distance:.2f}")
-            if distance <= 1200:
+            if distance <= 1200:  # 1200m 이내인 경우만 추가
                 valid_enemies.append({
                     'x': center_x,
                     'z': center_z,
                     'y': center_y,
                     'className': detected['className'],
+                    # 'confidence': 1.0,  # /set_obstacles 데이터 신뢰도
+                    # 'source': 'obstacles',
                     'distance': distance,
                     'id': detected['id']
                 })
