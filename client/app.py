@@ -51,7 +51,7 @@ def dashboard():
     if DEBUG: print('🚨 dashboard >>>')
     return render_template('dashboard.html')
 
-MOVING = 'PAUSE'
+STATE = 'PAUSE'
 TURRET_FIRST_ROTATING = True
 TURRET_HIT = -1
 
@@ -121,7 +121,10 @@ def detect():
     if STATE_DEBUG : print('1 🤩🤩TURRET_HIT', TURRET_HIT)
 
     nearest_enemy = {'state': False}
-    if MOVING == 'PAUSE':
+    enemy_list = []
+    dead_enemy_list = []
+    if STATE == 'PAUSE':
+        # enemy_list = get_enemy_pos.get_enemy_list(filtered_results, player_data, obstacles_from_map)
         nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles_from_map)
     print('📀 nearest_enemy', nearest_enemy)
     if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
@@ -203,12 +206,26 @@ def get_move():
         return jsonify(command)
     else:
         return jsonify({"move": "STOP", "weight": 1.0})
-
-@app.route('/get_action', methods=['GET'])
+    
+@app.route('/get_action', methods=['POST'])
 def get_action():
     global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
     global action_command, latest_nearest_enemy
-    if DEBUG: print('🚨 get_action >>>', action_command)
+    data = request.get_json(force=True)
+
+    position = data.get("position", {})
+    turret = data.get("turret", {})
+
+    pos_x = position.get("x", 0)
+    pos_y = position.get("y", 0)
+    pos_z = position.get("z", 0)
+
+    turret_x = turret.get("x", 0)
+    turret_y = turret.get("y", 0)
+
+    print(f"📨 Position received: x={pos_x}, y={pos_y}, z={pos_z}")
+    print(f"🎯 Turret received: x={turret_x}, y={turret_y}")
+    
     if action_command:
         TURRET_FIRST_ROTATING = False
         command = action_command.pop(0)
@@ -223,9 +240,30 @@ def get_action():
             if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
             if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
 
-        return jsonify(command)
     else:
-        return jsonify({"turret": "", "weight": 0.0})
+        command = {
+            "moveWS": {"command": "STOP", "weight": 1.0},
+            "moveAD": {"command": "", "weight": 0.0},
+            "turretQE": {"command": "", "weight": 0.0},
+            "turretRF": {"command": "", "weight": 0.0},
+            "fire": False
+        }
+
+    return jsonify(command)
+
+    if combined_commands:
+        command = combined_commands.pop(0)
+    else:
+        command = {
+            "moveWS": {"command": "STOP", "weight": 1.0},
+            "moveAD": {"command": "", "weight": 0.0},
+            "turretQE": {"command": "", "weight": 0.0},
+            "turretRF": {"command": "", "weight": 0.0},
+            "fire": False
+        }
+
+    print("🔁 Sent Combined Action:", command)
+    return jsonify(command)
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():

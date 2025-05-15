@@ -83,7 +83,7 @@ def get_enemy_list(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        print('detected', detected)
+        # print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']
@@ -134,7 +134,7 @@ def find_nearest_enemy(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        print('detected', detected)
+        # print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']
