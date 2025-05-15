@@ -159,5 +159,11 @@ def get_reverse_action_command(turret_x_angle, turret_y_angle, player_x_angle, p
     hor_action = generate_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
     ver_action = generate_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
     action_command = [*hor_action, *ver_action]
-    action_command.append({"turretQE": {"command": "Q", "weight": 0.0}})
+    action_command.append({
+        "moveWS": {"command": "STOP", "weight": 1.0},
+        "moveAD": {"command": "", "weight": 0.0},
+        "turretQE": {"command": "STOP", "weight": 0.0},
+        "turretRF": {"command": "", "weight": 0.0},
+        "fire": False
+    })
     return action_command
