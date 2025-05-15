@@ -9,8 +9,10 @@ import json
 import modules.turret as turret
 import modules.get_enemy_pos as get_enemy_pos
 import modules.get_obstacles as get_obstacles
+from modules.rotation_controller import start_rotation_full
 import math
 import os
+
 
 app = Flask(__name__)
 
@@ -19,7 +21,7 @@ STATE_DEBUG = False
 
 # YOLO 모델 로드
 try:
-    model = YOLO('best.pt')
+    model = YOLO('best_add.pt')
 
 except Exception as e:
     raise RuntimeError(f"YOLO model loading failed: {str(e)}")
@@ -79,7 +81,7 @@ def detect():
     # 3. 탐지 결과 필터링
     target_classes = {
         0: 'Car002', 1: 'Car003', 2: 'Car005', 3: 'Human001',
-        4: 'Rock001', 5: 'Rock2', 6: 'Tank001', 7: 'Wall001', 8: 'Wall002'
+        4: 'Rock001', 5: 'Tank001', 6: 'Wall001'
     }
     class_colors = {
         'car002': '#FF0000', 'car003': '#0000FF', 'car005': '#00FF00', 'human001': 'orange',
@@ -182,6 +184,7 @@ def info():
 #         if DEBUG: print("🚫 Missing position data")
 #         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
 
+<<<<<<< Updated upstream
 #     try:
 #         x, y, z = map(float, data["position"].split(","))
 #         player_data['pos'] = {'x': x, 'y': y, 'z': z}
@@ -195,6 +198,32 @@ def info():
 #     except Exception as e:
 #         if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
 #         return jsonify({"status": "ERROR", "message": str(e)}), 400
+=======
+    try:
+        x, y, z = map(float, data["position"].split(","))
+        player_data['pos'] = {'x': x, 'y': y, 'z': z}
+        player_data.setdefault('turret_x', 0)
+        player_data.setdefault('turret_y', 0)
+        player_data.setdefault('body_x', 0)
+        player_data.setdefault('body_y', 0)
+        player_data.setdefault('body_z', 0)
+        if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
+
+        if destination:
+            dx = x - destination['x']
+            dz = z - destination['z']
+            distance =math.sqrt(dx**2 + dz**2)
+
+            if distance < 45 and not is_rotating:
+                is_rotating = True
+                print("🎯 목적지 도착! 자동 회전 시작.")
+                start_rotation()
+
+        return jsonify({"status": "OK", "current_position": player_data['pos']})
+    except Exception as e:
+        if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
+        return jsonify({"status": "ERROR", "message": str(e)}), 400
+>>>>>>> Stashed changes
 
 # @app.route('/get_move', methods=['GET'])
 # def get_move():
@@ -377,36 +406,18 @@ def init():
 def start():
     global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
-    map_path = 'client/NewMap.map'
+    map_path = 'NewMap.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
 
-@app.route('/test_rotation', methods=['POST'])
-def test_rotation():
-    global action_command
-    if DEBUG: print('🚨 test_rotation >>>')
-    data = request.get_json()
-    rotation_type = data.get('type', 'Q')
-    count = data.get('count', 1)
-
-    action_command = []
-    for _ in range(count):
-        action_command.append({"turret": rotation_type, "weight": 0.5})
-    action_command.append({"turret": rotation_type, "weight": 0.0})
-
-    test_info = {
-        'rotation_type': rotation_type,
-        'count': count,
-        'timestamp': time.strftime('%H:%M:%S'),
-        'rotation_desc': {
-            'Q': 'Left', 'E': 'Right', 'F': 'Down', 'R': 'Up'
-        }.get(rotation_type, 'Unknown')
-    }
-    if DEBUG: print(f"🔄 Testing {test_info['rotation_desc']} rotation ({rotation_type}) x {count}")
-    socketio.emit('rotation_test', test_info)
-    if DEBUG: print("action_command >>", action_command)
-    return jsonify({"status": "OK", "message": "Rotation test started"})
+@app.route('/start_rotation', methods=['POST'])
+def start_rotation():
+    print("🫡🛞/start_rotation")
+    global action_command, player_data
+    import threading
+    threading.Thread(target=start_rotation_full, args=(player_data, action_command)).start()
+    return jsonify({"status": "started"})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
