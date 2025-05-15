@@ -61,6 +61,9 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
                 det['position'] = obs['position']
                 det['id'] = obs['id']
 
+        if det.get('position') is None:
+            det['className'] = 'Miss_detected'
+            
     return detected_results
 
 def get_enemy_list(detections, player_data, obstacles):
