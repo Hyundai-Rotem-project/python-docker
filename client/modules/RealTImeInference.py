@@ -64,12 +64,12 @@ class RealTimeInference:
         return latest_log
     def preapare_image(self,left_dir,right_dir):
         # 폴더 내 모든 파일 목록 가져오기
-        left_files = sorted(os.listdir(left_dir))
-        right_files = sorted(os.listdir(right_dir))
-
+        left_files = os.listdir(left_dir)
+        right_files = os.listdir(right_dir)
         # 마지막 이미지 선택
-        left_img_path = os.path.join(left_dir, left_files[-1])
-        right_img_path = os.path.join(right_dir, right_files[-1])
+        sorted_files = sorted(left_files, key=lambda x: float(x.replace('.png', '')))
+        left_img_path = os.path.join(left_dir, sorted_files[-1])
+        right_img_path = os.path.join(right_dir, sorted_files[-1])
 
         return left_img_path, right_img_path
 
@@ -186,6 +186,7 @@ class RealTimeInference:
         left_img_path, right_img_path = self.preapare_image(left_dir,right_dir)
         left_detection_list=self.detection2list(left_img_path)
         right_detection_list=self.detection2list(right_img_path)
+        
         detection_matched = self.match_detections(left_detection_list,right_detection_list)
     
         disparity_img = self.img2disparity(left_img_path,right_img_path)
@@ -195,7 +196,6 @@ class RealTimeInference:
         log_X = latest_log[['Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z','Player_Body_X', 'Player_Body_Y', 'Player_Body_Z',
                             'StereoL_X', 'StereoL_Y', 'StereoL_Z', 'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X','StereoR_Y', 'StereoR_Z']]
         y_pred_list=[]
-        dect_list=[]
         for detection_info in detection_with_coord:
             bx_left, by_left = detection_info[0]['box_center']
             bx_right, by_right =  detection_info[1]['box_center'] 
@@ -215,14 +215,7 @@ class RealTimeInference:
                            'disparity': disparity_val}
             log_dict=log_X.to_dict()
             combined_dict = {**log_dict, **box_info_dict}
-            row_data = pd.Series(combined_dict)
-            dect_list.append(row_data)
-            log_info = pd.DataFrame(dect_list)
-
-            X = log_info[['Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z','Player_Body_X', 'Player_Body_Y', 'Player_Body_Z',
-                      'StereoL_X', 'StereoL_Y', 'StereoL_Z', 'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X','StereoR_Y', 'StereoR_Z',
-                      'bx_left', 'by_left','bx_right', 'by_right', 'box_size_left', 'box_size_right',  
-                      'estimated_distance','disparity']]
+            X = pd.DataFrame([combined_dict])
             inference_model = joblib.load('random_forest_model.pkl')
             y_pred = inference_model.predict(X)
             y_pred_list.append(y_pred)
@@ -231,7 +224,8 @@ class RealTimeInference:
 
 inference = RealTimeInference()
 y_pred = inference.log2pred(left_dir,right_dir,log_path)
-
-print(y_pred)
+log = inference.prepare_log(log_path)
+print('y_pred:',y_pred)
+print('log',log[['Enemy_Pos_X','Enemy_Pos_Y','Enemy_Pos_Z']])
 
 
