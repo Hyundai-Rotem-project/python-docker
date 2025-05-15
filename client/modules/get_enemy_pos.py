@@ -60,7 +60,9 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
                 min_angle = angel_diff
                 det['position'] = obs['position']
                 det['id'] = obs['id']
-
+                        
+        if det.get('position') is None:
+            det['className'] = 'Miss_detected'
     return detected_results
 
 def get_enemy_list(detections, player_data, obstacles):
@@ -83,7 +85,6 @@ def get_enemy_list(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        # print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']

@@ -12,4 +12,5 @@ def load_obstacles_from_map(map_path):
     for index, item in enumerate(map_data['obstacles']):
         item['id'] = f"{item['prefabName']}_{index}"
 
+    print('map_data["obstacles"]', map_data['obstacles'])
     return map_data['obstacles']

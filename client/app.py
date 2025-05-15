@@ -9,7 +9,7 @@ import json
 import modules.turret as turret
 import modules.get_enemy_pos as get_enemy_pos
 import modules.get_obstacles as get_obstacles
-from modules.rotation_controller import start_rotation_full
+import modules.rotation_controller as rotation_controller
 import math
 import os
 
@@ -172,7 +172,7 @@ def info():
         'body_y': data.get('playerBodyY'),
         'body_z': data.get('playerBodyZ'),
     }
-    # if DEBUG: print(f"📍 Player data updated: {player_data}")
+    if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
 
 # @app.route('/update_position', methods=['POST'])
@@ -184,7 +184,6 @@ def info():
 #         if DEBUG: print("🚫 Missing position data")
 #         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
 
-<<<<<<< Updated upstream
 #     try:
 #         x, y, z = map(float, data["position"].split(","))
 #         player_data['pos'] = {'x': x, 'y': y, 'z': z}
@@ -198,32 +197,6 @@ def info():
 #     except Exception as e:
 #         if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
 #         return jsonify({"status": "ERROR", "message": str(e)}), 400
-=======
-    try:
-        x, y, z = map(float, data["position"].split(","))
-        player_data['pos'] = {'x': x, 'y': y, 'z': z}
-        player_data.setdefault('turret_x', 0)
-        player_data.setdefault('turret_y', 0)
-        player_data.setdefault('body_x', 0)
-        player_data.setdefault('body_y', 0)
-        player_data.setdefault('body_z', 0)
-        if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
-
-        if destination:
-            dx = x - destination['x']
-            dz = z - destination['z']
-            distance =math.sqrt(dx**2 + dz**2)
-
-            if distance < 45 and not is_rotating:
-                is_rotating = True
-                print("🎯 목적지 도착! 자동 회전 시작.")
-                start_rotation()
-
-        return jsonify({"status": "OK", "current_position": player_data['pos']})
-    except Exception as e:
-        if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
-        return jsonify({"status": "ERROR", "message": str(e)}), 400
->>>>>>> Stashed changes
 
 # @app.route('/get_move', methods=['GET'])
 # def get_move():
@@ -239,7 +212,7 @@ def info():
 @app.route('/get_action', methods=['POST'])
 def get_action():
     global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
-    global action_command, latest_nearest_enemy
+    global action_command, latest_nearest_enemy, is_rotating
     data = request.get_json(force=True)
 
     position = data.get("position", {})
@@ -258,6 +231,7 @@ def get_action():
     if action_command:
         TURRET_FIRST_ROTATING = False
         command = action_command.pop(0)
+        start_rotation()
         if DEBUG: print(f"🔫 Action Command: {command}")
         
         if TURRET_HIT == 1 and command['turretQE']['command'] == 'STOP':
@@ -270,6 +244,8 @@ def get_action():
             if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
 
     else:
+        # rotation_controller.degree_check_and_stop(player_data, action_command)
+        # print("최종 정지!")
         command = {
             "moveWS": {"command": "STOP", "weight": 1.0},
             "moveAD": {"command": "", "weight": 0.0},
@@ -411,12 +387,17 @@ def start():
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
 
+def get_player_data():
+    return player_data
+
 @app.route('/start_rotation', methods=['POST'])
 def start_rotation():
     print("🫡🛞/start_rotation")
     global action_command, player_data
+    print("BEFORE",player_data)
     import threading
-    threading.Thread(target=start_rotation_full, args=(player_data, action_command)).start()
+    threading.Thread(target=rotation_controller.start_rotation_10degree, args=(get_player_data, action_command)).start()
+    print("AFTER", player_data)
     return jsonify({"status": "started"})
 
 if __name__ == '__main__':
