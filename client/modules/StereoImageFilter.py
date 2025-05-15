@@ -15,8 +15,8 @@ class StereoImageFilter:
             self.model_path = 'C:\\Users\\Dhan\\Desktop\\Project3\\best.pt'
         self.model = YOLO(self.model_path).to('cuda' if torch.cuda.is_available() else 'cpu')
         self.target_classes = {
-            0: 'car2', 1: 'car3', 2: 'car5', 3: 'human1', 4: 'rock1',
-            5: 'rock2', 6: 'tank', 7: 'wall1', 8: 'wall2'
+            0: 'car2', 1: 'car3', 2: 'car5', 3: 'human', 4: 'rock',
+            5: 'tank', 6: 'wall'
         }
 
 

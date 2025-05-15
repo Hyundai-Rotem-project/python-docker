@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import cv2, os
 from StereoImageFilter import StereoImageFilter
-
+import joblib
 
 class DistCalculator:
     def __init__(self, camera_intrinsic=None):        
@@ -38,7 +38,7 @@ class DistCalculator:
         """
         # 카메라 내부 파라미터가 없는 경우 기본값 사용
         if camera_intrinsic is None:
-            # 이미지 크기 512x512 기준으로 임시 설정
+            # 이미지 크기 512x512 기준으로 설정
             fx = 1200  # 초첨 거리 (x축)
             fy = 1200  # 초첨 거리 (y축)
             cx = 256   # 주점 x 좌표
@@ -248,7 +248,7 @@ class StereoPreprocess:
                             speckleRange=32)
             disparity = stereo.compute(img_L, img_R).astype(np.float32) / 16.0
             disparity_dict.update({time:disparity})
-            disparity_list = sorted(disparity_dict.items())
+        disparity_list = sorted(disparity_dict.items())
         return disparity_list
     
     def get_pixel_values(self, disparity_list, coordinates_list):
@@ -397,8 +397,8 @@ class StereoRegression:
         y = log_data[['Distance', 'Enemy_Pos_X', 'Enemy_Pos_Y', 'Enemy_Pos_Z']]
         X = log_data[['Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z','Player_Body_X', 'Player_Body_Y', 'Player_Body_Z',
                       'StereoL_X', 'StereoL_Y', 'StereoL_Z', 'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X','StereoR_Y', 'StereoR_Z',
-                      'bx_left', 'by_left','bx_right', 'by_right', 'box_size_left', 'box_size_right', 'disparity', 
-                      'estimated_distance', 'est_dir_x', 'est_dir_y', 'est_dir_z']]
+                      'bx_left', 'by_left','bx_right', 'by_right', 'box_size_left', 'box_size_right',  
+                      'estimated_distance','disparity']] #'est_dir_x', 'est_dir_y', 'est_dir_z'
         
 
         # 학습/테스트 데이터 분할
@@ -408,6 +408,9 @@ class StereoRegression:
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
 
+        # 모델 저장
+        joblib.dump(model, 'random_forest_model.pkl')
+        
         # 예측
         y_pred = model.predict(X_test)
 
