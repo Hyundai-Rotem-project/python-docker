@@ -356,28 +356,28 @@ def info():
 
     return jsonify(status="success", control=control, weight=weight)
 
-# @app.route('/update_position', methods=['POST'])
-# def update_position():
-#     global player_data
-#     if DEBUG: print('🚨 update_position >>>')
-#     data = request.get_json()
-#     if not data or "position" not in data:
-#         if DEBUG: print("🚫 Missing position data")
-#         return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
+@app.route('/update_position', methods=['POST'])
+def update_position():
+    global player_data
+    if DEBUG: print('🚨 update_position >>>')
+    data = request.get_json()
+    if not data or "position" not in data:
+        if DEBUG: print("🚫 Missing position data")
+        return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
 
-#     try:
-#         x, y, z = map(float, data["position"].split(","))
-#         player_data['pos'] = {'x': x, 'y': y, 'z': z}
-#         player_data.setdefault('turret_x', 0)
-#         player_data.setdefault('turret_y', 0)
-#         player_data.setdefault('body_x', 0)
-#         player_data.setdefault('body_y', 0)
-#         player_data.setdefault('body_z', 0)
-#         if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
-#         return jsonify({"status": "OK", "current_position": player_data['pos']})
-#     except Exception as e:
-#         if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
-#         return jsonify({"status": "ERROR", "message": str(e)}), 400
+    try:
+        x, y, z = map(float, data["position"].split(","))
+        player_data['pos'] = {'x': x, 'y': y, 'z': z}
+        player_data.setdefault('turret_x', 0)
+        player_data.setdefault('turret_y', 0)
+        player_data.setdefault('body_x', 0)
+        player_data.setdefault('body_y', 0)
+        player_data.setdefault('body_z', 0)
+        if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
+        return jsonify({"status": "OK", "current_position": player_data['pos']})
+    except Exception as e:
+        if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
+        return jsonify({"status": "ERROR", "message": str(e)}), 400
 
 # @app.route('/get_move', methods=['GET'])
 # def get_move():
@@ -424,9 +424,16 @@ def get_action():
             if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
 
     else:
+        # app_test 스타일 명령을 app.py 포맷으로 변환
+        moveWS = {"command": "STOP", "weight": 0.0}
+        moveAD = {"command": "", "weight": 0.0}
+        if last_control in ["W", "S", "STOP"]:
+            moveWS = {"command": last_control, "weight": last_weight}
+        if last_control in ["A", "D"]:
+            moveAD = {"command": last_control, "weight": last_weight}
         command = {
-            "moveWS": {"command": "STOP", "weight": 1.0},
-            "moveAD": {"command": "", "weight": 0.0},
+            "moveWS": moveWS,
+            "moveAD": moveAD,
             "turretQE": {"command": "", "weight": 0.0},
             "turretRF": {"command": "", "weight": 0.0},
             "fire": False
