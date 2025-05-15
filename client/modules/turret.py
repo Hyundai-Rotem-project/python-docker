@@ -18,13 +18,44 @@ def calculate_angle_diff(target_angle, current_angle):
 def generate_action_command(type, diff, difault_w):
     action_command = []
     while abs(diff) > 0.05:
-        if diff > 0:
-            direction = "E" if type == 'hor' else "R"
-        else:
-            direction = "Q" if type == 'hor' else "F"
-
         weight = min(abs(diff) / difault_w, 1.0)
-        action_command.append({"turret": direction, "weight": weight})
+        command = {}
+        if diff > 0:
+            if type == 'hor':
+                command = {
+                    "moveWS": {"command": "", "weight": 0.0},
+                    "moveAD": {"command": "", "weight": 0.0},
+                    "turretQE": {"command": "", "weight": 0.0},
+                    "turretRF": {"command": "R", "weight": weight},
+                    "fire": False
+                }
+            else: 
+                command = {
+                    "moveWS": {"command": "", "weight": 0.0},
+                    "moveAD": {"command": "", "weight": 0.0},
+                    "turretQE": {"command": "E", "weight": weight},
+                    "turretRF": {"command": "", "weight": 0.0},
+                    "fire": False
+                }
+
+        else:
+            if type == 'hor':
+                command = {
+                    "moveWS": {"command": "", "weight": 0.0},
+                    "moveAD": {"command": "", "weight": 0.0},
+                    "turretQE": {"command": "", "weight": 0.0},
+                    "turretRF": {"command": "F", "weight": weight},
+                    "fire": False
+                }
+            else: 
+                command = {
+                    "moveWS": {"command": "", "weight": 0.0},
+                    "moveAD": {"command": "", "weight": 0.0},
+                    "turretQE": {"command": "Q", "weight": weight},
+                    "turretRF": {"command": "", "weight": 0.0},
+                    "fire": False
+                }
+        action_command.append(command)
         diff -= math.copysign(weight * difault_w, diff)
 
     return action_command
@@ -84,8 +115,20 @@ def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None
     ver_action = generate_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
 
     action_command = [*hor_action, *ver_action]
-    action_command.append({"turret": "FIRE"})
-    action_command.append({"turret": "Q", "weight": 0.0})
+    action_command.append({
+        "moveWS": {"command": "STOP", "weight": 1.0},
+        "moveAD": {"command": "", "weight": 0.0},
+        "turretQE": {"command": "", "weight": 0.0},
+        "turretRF": {"command": "", "weight": 0.0},
+        "fire": True
+    })
+    action_command.append({
+        "moveWS": {"command": "STOP", "weight": 1.0},
+        "moveAD": {"command": "", "weight": 0.0},
+        "turretQE": {"command": "STOP", "weight": 0.0},
+        "turretRF": {"command": "", "weight": 0.0},
+        "fire": False
+    })
 
     return action_command
 
@@ -116,5 +159,11 @@ def get_reverse_action_command(turret_x_angle, turret_y_angle, player_x_angle, p
     hor_action = generate_action_command('hor', yaw_diff, HORIZONTAL_DEGREE_PER_WEIGHT)
     ver_action = generate_action_command('ver', pitch_diff, VERTICAL_DEGREE_PER_WEIGHT)
     action_command = [*hor_action, *ver_action]
-    action_command.append({"turret": "Q", "weight": 0.0})
+    action_command.append({
+        "moveWS": {"command": "STOP", "weight": 1.0},
+        "moveAD": {"command": "", "weight": 0.0},
+        "turretQE": {"command": "STOP", "weight": 0.0},
+        "turretRF": {"command": "", "weight": 0.0},
+        "fire": False
+    })
     return action_command

@@ -22,6 +22,7 @@ def calculate_relative_angle(player_data, obstacle_info):
 
     for index, obs in enumerate(obstacle_info):
         position = obs['position']
+    
 
         # 벡터: player → obstacle
         dx = position['x'] - player_pos['x']
@@ -57,6 +58,15 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
     for det in detected_results:
         bbox = det['bbox']
         bbox_angle = calculate_bbox_angle(bbox)
+        min_angle = float('inf')
+        for i, obs in enumerate(obstacle_info):
+            angel_diff = abs(obs['angle'] - bbox_angle)
+            cond = angel_diff < min_angle and det['className'] == obs['prefabName']
+            if cond:
+                min_angle = angel_diff
+                det['position'] = obs['position']
+                det['id'] = obs['id']
+
         min_score = float('inf')
         best_obs = None
         for obs in obstacle_info:
@@ -100,10 +110,7 @@ def get_enemy_list(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        if 'position' not in detected:
-           logging.debug(f"Skipping un-matched detection: {detected}")
-           continue
-        print('detected', detected)
+        # print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']

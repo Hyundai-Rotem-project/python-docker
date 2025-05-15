@@ -71,7 +71,7 @@ def dashboard():
     if DEBUG: print('?? dashboard >>>')
     return render_template('dashboard.html')
 
-MOVING = 'PAUSE'
+STATE = 'PAUSE'
 TURRET_FIRST_ROTATING = True
 TURRET_HIT = -1
 
@@ -439,10 +439,16 @@ def update_bullet():
         'y': data.get('y'),
         'z': data.get('z'),
         'target': data.get('hit'),
-        'timestamp': time.strftime('%H:%M:%S')
+        'hit' : None,
+        'timestamp': time.strftime('%H:%M:%S'),
+        'tx' : latest_nearest_enemy.get('x'),
+        'ty' : latest_nearest_enemy.get('y'),
+        'tz' : latest_nearest_enemy.get('z'),
     }
 
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
+    impact_info['hit'] = is_hit
+
     if DEBUG: print('💥', is_hit)
     if not is_hit:
         TURRET_HIT = 0
