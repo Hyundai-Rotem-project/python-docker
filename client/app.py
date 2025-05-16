@@ -45,6 +45,7 @@ obstacles = []  # /update_obstacle 데이터 저장
 obstacles_from_map = []
 latest_nearest_enemy = None
 MATCH_THRESHOLD = 3.0
+destination = None
 current_position = None
 last_position = None
 last_valid_angle = None
@@ -71,7 +72,7 @@ def dashboard():
     if DEBUG: print('?? dashboard >>>')
     return render_template('dashboard.html')
 
-STATE = 'PAUSE'
+MOVING = 'PAUSE'
 TURRET_FIRST_ROTATING = True
 TURRET_HIT = -1
 
@@ -93,32 +94,11 @@ def calculate_rotation_weight(angle_deg):
     target = min(0.3, (abs(angle_deg) / 45) * 0.3)
     return select_weight(target)
 
-def iou(box1, box2):
-    # box: [x1, y1, x2, y2]
-    x1 = max(box1[0], box2[0])
-    y1 = max(box1[1], box2[1])
-    x2 = min(box1[2], box2[2])
-    y2 = min(box1[3], box2[3])
-    inter_area = max(0, x2 - x1) * max(0, y2 - y1)
-    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
-    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
-    union_area = area1 + area2 - inter_area
-    return inter_area / union_area if union_area > 0 else 0
-
-def nms(detections, iou_threshold=0.5):
-    detections = sorted(detections, key=lambda x: x['confidence'], reverse=True)
-    keep = []
-    while detections:
-        det = detections.pop(0)
-        keep.append(det)
-        detections = [d for d in detections if iou(det['bbox'], d['bbox']) < iou_threshold or det['className'] != d['className']]
-    return keep
-
 @app.route('/detect', methods=['POST'])
 def detect():
     global player_data, latest_nearest_enemy, action_command, destination, obstacles_from_map
     global TURRET_FIRST_ROTATING, TURRET_HIT
-    print('🌍 detect >>>')
+    print('?? detect >>>')
 
     # 1. 이미지 수신
     image = request.files.get('image')
@@ -170,6 +150,7 @@ def detect():
             'className': target_name,
             'bbox': bbox_yolo,
             'confidence': confidence,
+            # 'map_center': coords['map_center'],
             'color': '#0000FF',
             'filled': False,
             'updateBoxWhileMoving': False
@@ -179,31 +160,28 @@ def detect():
     if STATE_DEBUG : print('1 ????TURRET_HIT', TURRET_HIT)
 
     nearest_enemy = {'state': False}
-    enemy_list = []
-    dead_enemy_list = []
-    if STATE == 'PAUSE':
-        # enemy_list = get_enemy_pos.get_enemy_list(filtered_results, player_data, obstacles_from_map)
+    if MOVING == 'PAUSE':
         nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles_from_map)
-    print('📀 nearest_enemy', nearest_enemy)
-    if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
+    print('?? nearest_enemy', nearest_enemy)
+    if nearest_enemy['state'] and TURRET_FIRST_ROTATING and state == "STOPPED":
         try:
-            # if DEBUG: print(f"👉 Generating action command: player_pos={player_data.get('pos')}, dest={destination}")
             latest_nearest_enemy = nearest_enemy
+            print("[포격 명령 생성:detect] player_data:", player_data)
+            print("[포격 명령 생성:detect] latest_nearest_enemy:", latest_nearest_enemy)
             action_command = turret.get_action_command(
                 player_data['pos'],
                 nearest_enemy,
-                turret_x_angle=player_data['turret_x'],
-                turret_y_angle=player_data['turret_y'],
-                player_y_angle=player_data['body_y']
+                turret_x_angle=player_data.get('turret_x', 0),
+                turret_y_angle=player_data.get('turret_y', 0),
+                player_y_angle=player_data.get('body_y', 0)
             )
-        
-            print('📀 action_command', action_command)
+            print('?? action_command', action_command)
         except ValueError as e:
-            print(f"🚫 Error generating action command: {str(e)}")
+            print(f"?? Error generating action command: {str(e)}")
             action_command = []
         
-        if STATE_DEBUG : print('2 🤩🤩action - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
-        if STATE_DEBUG : print('2 🤩🤩action - TURRET_HIT -1', TURRET_HIT)
+        if STATE_DEBUG : print('2 ????action - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
+        if STATE_DEBUG : print('2 ????action - TURRET_HIT -1', TURRET_HIT)
 
     return jsonify(filtered_results)
 
@@ -216,7 +194,6 @@ def info():
     data = request.get_json(force=True)
     if not data:
         return jsonify({'error': 'No JSON received'}), 400
-    
     
     # 목적지가 설정되지 않았다면 정지
     if not destination:
@@ -242,7 +219,6 @@ def info():
         'body_x': data.get('playerBodyX'),
         'body_y': data.get('playerBodyY'),
         'body_z': data.get('playerBodyZ'),
-
     }
 
     # 2) 초기 방향 보정
@@ -254,11 +230,9 @@ def info():
         else:
             current_angle = math.radians(bodyX)
     else:
-        dx = destination['x']
-        dz = destination['z']
-        px, pz = current_position
-        px, pz = current_position
-        current_angle = math.atan2(dz - pz, dx - px)
+        dx = destination['x'] - current_position[0]
+        dz = destination['z'] - current_position[1]
+        current_angle = math.atan2(dz, dx)
     last_valid_angle = current_angle
 
     # 3) 바디 방향 변화 로그
@@ -277,18 +251,18 @@ def info():
         rotation_start_time = time.time()
 
     elif state == "ROTATING":
-        dx = destination['x']
-        dz = destination['z']
-        px, pz = current_position
+        dx = destination['x'] - current_position[0]
+        dz = destination['z'] - current_position[1]
 
         # 현재 전방 벡터
         fx, fz = math.cos(current_angle), math.sin(current_angle)
         # 목표 방향 벡터 (정규화)
-        tx, tz = dx - px, dz - pz
-        dist = math.hypot(tx, tz)
+        dist = math.hypot(dx, dz)
         if dist > 1e-6:
-            tx /= dist
-            tz /= dist
+            tx = dx / dist
+            tz = dz / dist
+        else:
+            tx, tz = fx, fz
 
         # 내적으로 각도 차이 계산
         dot = max(-1.0, min(1.0, fx*tx + fz*tz))
@@ -317,18 +291,18 @@ def info():
             weight = calculate_move_weight(distance_to_destination)
 
     elif state == "MOVING":
-        dx = destination['x']
-        dz = destination['z']
-        px, pz = current_position
-        z_diff = abs(pz - dz)
+        dx = destination['x'] - current_position[0]
+        dz = destination['z'] - current_position[1]
+        z_diff = abs(current_position[1] - destination['z'])
 
         # 방향 재판단에도 동일한 벡터 로직 사용
         fx, fz = math.cos(current_angle), math.sin(current_angle)
-        tx, tz = dx - px, dz - pz
-        dist = math.hypot(tx, tz)
+        dist = math.hypot(dx, dz)
         if dist > 1e-6:
-            tx /= dist
-            tz /= dist
+            tx = dx / dist
+            tz = dz / dist
+        else:
+            tx, tz = fx, fz
         dot = max(-1.0, min(1.0, fx*tx + fz*tz))
         angle_diff_rad = math.acos(dot)
         deg = math.degrees(angle_diff_rad)
@@ -358,13 +332,13 @@ def info():
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
-    global player_data
+    global current_position, last_position, state, destination, player_data
+
     if DEBUG: print('🚨 update_position >>>')
+
     data = request.get_json()
     if not data or "position" not in data:
-        if DEBUG: print("🚫 Missing position data")
-        return jsonify({"status": "ERROR", "message": "Missing position data"}), 400
-
+        return jsonify({'status': 'ERROR', 'message': 'Missing position data'}), 400
     try:
         x, y, z = map(float, data["position"].split(","))
         player_data['pos'] = {'x': x, 'y': y, 'z': z}
@@ -373,73 +347,51 @@ def update_position():
         player_data.setdefault('body_x', 0)
         player_data.setdefault('body_y', 0)
         player_data.setdefault('body_z', 0)
-        if DEBUG: print(f"📍 Position updated: {player_data['pos']}")
-        return jsonify({"status": "OK", "current_position": player_data['pos']})
+        current_position = (x, z)
+        if last_position:
+            dx, dz = x - last_position[0], z - last_position[1]
+            print(f"?? Movement change: dx={dx:.6f}, dz={dz:.6f}")
+        if destination:
+            dx, dz = destination
+            z_diff = abs(z - dz)
+            direction_angle = math.degrees(math.atan2(dz - z, dx - x))
+            print(f"?? Position updated: {current_position}, target angle: {direction_angle:.2f}°, z_diff: {z_diff:.2f}m")
+        else:
+            print(f"?? Position updated: {current_position}")
+        return jsonify(status="OK", current_position=current_position)
     except Exception as e:
-        if DEBUG: print(f"🚫 Invalid position format: {str(e)}")
-        return jsonify({"status": "ERROR", "message": str(e)}), 400
-
-# @app.route('/get_move', methods=['GET'])
-# def get_move():
-#     if DEBUG: print('🚨 get_move >>>')
-#     global move_command
-#     if move_command:
-#         command = move_command.pop(0)
-#         if DEBUG: print(f"🚗 Move Command: {command}")
-#         return jsonify(command)
-#     else:
-#         return jsonify({"move": "STOP", "weight": 1.0})
+        return jsonify({'status': 'ERROR', 'message': str(e)}), 400
     
-@app.route('/get_action', methods=['POST'])
+@app.route('/get_move', methods=['GET'])
+def get_move():
+    # /info에서 계산된 제어값을 그대로 반환
+    return jsonify(move=last_control, weight=last_weight)
+
+@app.route('/get_action', methods=['GET'])
 def get_action():
     global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
-    global action_command, latest_nearest_enemy
-    data = request.get_json(force=True)
-
-    position = data.get("position", {})
-    turret = data.get("turret", {})
-
-    pos_x = position.get("x", 0)
-    pos_y = position.get("y", 0)
-    pos_z = position.get("z", 0)
-
-    turret_x = turret.get("x", 0)
-    turret_y = turret.get("y", 0)
-
-    print(f"📨 Position received: x={pos_x}, y={pos_y}, z={pos_z}")
-    print(f"🎯 Turret received: x={turret_x}, y={turret_y}")
+    global action_command, latest_nearest_enemy, state, player_data
+    if DEBUG: print('?? get_action >>>', action_command)
+    print("state :"+state)
     
     if action_command:
         TURRET_FIRST_ROTATING = False
         command = action_command.pop(0)
-        if DEBUG: print(f"🔫 Action Command: {command}")
+        if DEBUG: print(f"?? Action Command: {command}")
         
-        if TURRET_HIT == 1 and command['turretQE']['command'] == 'STOP':
+        if TURRET_HIT == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
             # reverse 끝나는 지점
             TURRET_FIRST_ROTATING = True
             TURRET_HIT = -1
             MOVING = 'MOVING'
-            # print("impact_control False", action_command)
-            if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
-            if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
+            if STATE_DEBUG : print('5 ????reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
+            if STATE_DEBUG : print('5 ????reverse end - TURRET_HIT -1', TURRET_HIT)
 
+        return jsonify(command)
     else:
-        # app_test 스타일 명령을 app.py 포맷으로 변환
-        moveWS = {"command": "STOP", "weight": 0.0}
-        moveAD = {"command": "", "weight": 0.0}
-        if last_control in ["W", "S", "STOP"]:
-            moveWS = {"command": last_control, "weight": last_weight}
-        if last_control in ["A", "D"]:
-            moveAD = {"command": last_control, "weight": last_weight}
-        command = {
-            "moveWS": moveWS,
-            "moveAD": moveAD,
-            "turretQE": {"command": "", "weight": 0.0},
-            "turretRF": {"command": "", "weight": 0.0},
-            "fire": False
-        }
-
-    return jsonify(command)
+        # 포격 명령 없음
+        return jsonify({"turret": "", "weight": 0.0})
+    
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
@@ -457,16 +409,14 @@ def update_bullet():
         'y': data.get('y'),
         'z': data.get('z'),
         'target': data.get('hit'),
-        'hit' : None,
+        'hit': None,
         'timestamp': time.strftime('%H:%M:%S'),
-        'tx' : latest_nearest_enemy.get('x'),
-        'ty' : latest_nearest_enemy.get('y'),
-        'tz' : latest_nearest_enemy.get('z'),
+        'tx': latest_nearest_enemy.get('x') if latest_nearest_enemy else None,
+        'ty': latest_nearest_enemy.get('y') if latest_nearest_enemy else None,
+        'tz': latest_nearest_enemy.get('z') if latest_nearest_enemy else None
     }
 
     is_hit = turret.is_hit(latest_nearest_enemy, impact_info)
-    impact_info['hit'] = is_hit
-
     if DEBUG: print('💥', is_hit)
     if not is_hit:
         TURRET_HIT = 0
@@ -486,6 +436,8 @@ def update_bullet():
         action_command = turret.get_reverse_action_command(
             player_data.get('turret_x', 0),
             player_data.get('turret_y', 0),
+            player_data.get('body_x', 0),
+            player_data.get('body_y', 0)
         )
         
         if STATE_DEBUG : print('4 🤩🤩reverse - TURRET_FIRST_ROTATING f', TURRET_FIRST_ROTATING)
@@ -506,7 +458,7 @@ def set_destination():
     
     try:
         x, y, z = map(float, data["destination"].split(","))
-        destination = {'x': x, 'y': y, 'z': z}
+        destination = {'x': x, 'y': y, 'z': z}  # 딕셔너리 형태로 저장
 
         # 초기 방향 보정을 위해 리셋
         last_position = None

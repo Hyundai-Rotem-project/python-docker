@@ -45,17 +45,12 @@ def calculate_bbox_angle(bbox):
     return angle_x
 
 def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
-    for det in detected_results:
-        det.setdefault('position', None)
-        det.setdefault('id', None)
-
     obstacle_info = calculate_relative_angle(player_data, obstacle_data)
-    player_pos = player_data['pos']
-    used_obs_ids = set()
-    ANGLE_THRESHOLD = 40  # 허용 각도 차이(도)
-
-    for det in detected_results:
+    obstacle_angle = [item['angle'] for item in obstacle_info]
+        
+    for index, det in enumerate(detected_results):
         bbox = det['bbox']
+
         bbox_angle = calculate_bbox_angle(bbox)
         min_angle = float('inf')
         for i, obs in enumerate(obstacle_info):
@@ -91,7 +86,7 @@ def get_enemy_list(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        # print('detected', detected)
+        print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']
@@ -142,7 +137,7 @@ def find_nearest_enemy(detections, player_data, obstacles):
 
     valid_enemies = []
     for detected in detected_results:
-        # print('detected', detected)
+        print('detected', detected)
         if detected['className'] in enemy_classes and detected['confidence'] > 0.3:
             center_x = detected['position']['x']
             center_y = detected['position']['y']
@@ -173,12 +168,21 @@ def find_nearest_enemy(detections, player_data, obstacles):
     min_distance = float('inf')
     nearest_enemy = None
     for enemy in valid_enemies:
-        print('😡valid_enemies', enemy)
+        # print('😡valid_enemies', enemy)
         logging.info("😡valid_enemies")
         if enemy['distance'] < min_distance:
             min_distance = enemy['distance']
             nearest_enemy = enemy
             nearest_enemy['state'] = True
+            # nearest_enemy = {
+            #     'x': enemy['x'],
+            #     'z': enemy['z'],
+            #     'y': 10.0,
+            #     # 'distance': enemy['distance'],
+            #     # # 'className': enemy['className'],
+            #     # 'confidence': enemy['confidence'],
+            #     # 'source': enemy['source']
+            # }
     
     if nearest_enemy:
         logging.debug(f"Nearest enemy: {nearest_enemy}")
