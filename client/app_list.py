@@ -60,7 +60,6 @@ TURRET_FIRST_ROTATING = True
 TURRET_HIT = -1
 
 @app.route('/detect', methods=['POST'])
-@app.route('/detect', methods=['POST'])
 def detect():
     global player_data, latest_nearest_enemy, action_command, destination, obstacles_from_map
     global TURRET_FIRST_ROTATING, TURRET_HIT, enemy_queue
@@ -106,10 +105,14 @@ def detect():
     # 🎯 새로운 적 리스트 생성
     all_tanks = get_enemy_pos.get_enemy_list(filtered_results, player_data, obstacles_from_map)
     print("🪡", all_tanks)
+    if not isinstance(all_tanks, list):
+        print("⚠️ all_tanks is not a valid dictionary — skipping queue update")
+        return jsonify(filtered_results)
 
     if isinstance(all_tanks, list) and all_tanks:
         enemy_queue.clear()
         print("🧹 Cleared enemy_queue")
+
         existing_keys = set()
         for enemy in all_tanks:
             if enemy['className'] != 'Tank001':
@@ -210,51 +213,66 @@ def get_move():
 
 @app.route('/get_action', methods=['GET'])
 def get_action():
+    global action_command, player_data, enemy_queue
     global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
-    global action_command, latest_nearest_enemy, enemy_queue
-
-    if DEBUG: print('🚨 get_action >>>', action_command)
+    if DEBUG: print('🚨 get_action >>>')
 
     if action_command:
         TURRET_FIRST_ROTATING = False
         command = action_command.pop(0)
-        if DEBUG: print(f"🔫 Action Command: {command}")
+        if DEBUG: print(f"🚀 Action Command: {command}")
         return jsonify(command)
 
     if not enemy_queue or TURRET_FIRST_ROTATING:
         return jsonify({"turret": "", "weight": 0.0})
 
+    # 현재 타겟
     target = enemy_queue[0]
-    print(f"🎯 Current target: id={target['id']}, fire_count={target.get('fire_count', 0)}")
+    
+    # ✅ 적이 올바른 구조인지 확인
+    if not isinstance(target, dict) or 'x' not in target or 'z' not in target:
+        print("⚠️ Invalid target format. Skipping fire.")
+        enemy_queue.popleft()
+        return jsonify({"turret": "", "weight": 0.0})
 
+    # ✅ 발사 시도 횟수 체크
     if 'fire_count' not in target:
         target['fire_count'] = 0
 
     if target['fire_count'] >= MAX_FIRE_ATTEMPS:
-        print(f"🔥 MAX attempt reached — removing: {target['id']}")
+        print(f"🔥 MAX attempt reached, removing target: id={target.get('id', 'unknown')}")
         enemy_queue.popleft()
         return jsonify({"turret": "", "weight": 0.0})
 
     try:
+        # ✅ action_command 생성 전에 enemy 유효성 재검사
+        if target.get('className') not in ['Tank001', 'Car002']:
+            print("⚠️ Unknown or invalid target class. Skipping fire.")
+            enemy_queue.popleft()
+            return jsonify({"turret": "", "weight": 0.0})
+
         action_command = turret.get_action_command(
             player_data['pos'],
             target,
-            turret_x_angle=player_data.get('turret_x', 0),
-            turret_y_angle=player_data.get('turret_y', 0),
-            player_y_angle=player_data.get('body_y', 0)
+            turret_x_angle=player_data.get('turret_x'),
+            turret_y_angle=player_data.get('turret_y'),
+            player_y_angle=player_data.get('body_y')
         )
+
+        # ✅ FIRE 포함 여부 확인
+        if not any(cmd.get('turret') == 'FIRE' for cmd in action_command):
+            print("⚠️ No FIRE command in action_command. Skipping.")
+            return jsonify({"turret": "", "weight": 0.0})
+
         target['fire_count'] += 1
-        print(f"💥 Firing at {target['id']}, fire_count={target['fire_count']}")
-    except ValueError as e:
-        print(f"🚫 Action gen failed for {target['id']}: {e}")
+        print(f"💥 Firing at target: id={target['id']}, fire_count={target['fire_count']}")
+
+    except Exception as e:
+        print(f"🚫 Error generating action command: {e}")
         enemy_queue.popleft()
         return jsonify({"turret": "", "weight": 0.0})
 
-    if action_command:
-        return jsonify(action_command.pop(0))
-    else:
-        print("⚠️ Empty action_command generated.")
-        return jsonify({"turret": "", "weight": 0.0})
+    return jsonify(action_command.pop(0))
     
 
     # if TURRET_HIT == 0:  
@@ -316,6 +334,11 @@ def update_bullet():
             print("⚠️ Missing rotation info — skipping re-aim")
             return jsonify({"status": "OK", "message": "Skipped due to missing turret angles"})
 
+         # 🛡️ 포격 재명령 전에 확인
+        if latest_nearest_enemy is None or not isinstance(latest_nearest_enemy, dict):
+            print("🚫 No valid target to retry.")
+            return jsonify({"status": "SKIPPED", "message": "No retry due to missing target"})
+        
         time.sleep(3)  # 이건 향후 async로 개선
         try:
             action_command = turret.get_action_command(
