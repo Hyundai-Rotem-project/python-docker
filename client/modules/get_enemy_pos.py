@@ -66,27 +66,9 @@ def match_bbox_to_obstacle(detected_results, player_data, obstacle_data):
                 det['position'] = obs['position']
                 det['id'] = obs['id']
 
-        min_score = float('inf')
-        best_obs = None
-        for obs in obstacle_info:
-            if det['className'] != obs['prefabName']:
-                continue
-            if obs['id'] in used_obs_ids:
-                continue
-            angle_diff = abs(obs['angle'] - bbox_angle)
-            obs_pos = obs['position']
-            dist = math.sqrt((obs_pos['x'] - player_pos['x'])**2 + (obs_pos['z'] - player_pos['z'])**2)
-            score = angle_diff + 0.01 * dist
-            if score < min_score:
-                min_score = score
-                best_obs = obs
-        if best_obs:
-            det['position'] = best_obs['position']
-            det['id'] = best_obs['id']
-            used_obs_ids.add(best_obs['id'])
-        else:
-            det['position'] = None
-            det['id'] = None
+        if det.get('position') is None:
+            det['className'] = 'Miss_detected'
+            
     return detected_results
 
 def get_enemy_list(detections, player_data, obstacles):
