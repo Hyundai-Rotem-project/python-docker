@@ -61,6 +61,7 @@ def generate_action_command(type, diff, difault_w):
     return action_command
 
 def get_angles(from_pos, to_pos):
+    print("11111111", from_pos)
     dx = to_pos['x'] - from_pos['x']
     dy = to_pos['y'] - from_pos['y']
     dz = to_pos['z'] - from_pos['z']
@@ -134,13 +135,13 @@ def get_action_command(player_pos, target_pos, hit_pos=None, turret_x_angle=None
 
 # 명중 확인
 def is_hit(target_pos, bullet_pos, tolerance=5.5):
-    print("🤷‍♂️🤷‍♂️🤷‍♂️", target_pos)
-    print("🤷‍♂️🤷‍♂️🤷‍♂️", bullet_pos)
+    if not target_pos:
+        print("⚠️ is_hit() skipped: target_pos is None")
+        return False
     
-    # # className으로 명중 판별
-    # is_hit = target_pos['className'] == bullet_pos['target'] or bullet_pos['target'] == 'enemy'
-    # return is_hit
-
+    print("🤷‍♂️target_pos", target_pos)
+    print("🤷bullet_pos", bullet_pos)
+    
     # tolerence로 명중 판별
     dx = target_pos["x"] - bullet_pos["x"]
     dz = target_pos["z"] - bullet_pos["z"]
