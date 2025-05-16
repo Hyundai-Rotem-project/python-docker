@@ -7,12 +7,10 @@ from ultralytics import YOLO
 import time
 import json
 import modules.turret as turret
-import modules.get_enemy_pos_for_rotation as get_enemy_pos
+import modules.get_enemy_pos_total as get_enemy_pos
 import modules.get_obstacles as get_obstacles
-import modules.rotation_controller as rotation_controller
 import math
 import os
-
 
 app = Flask(__name__)
 
@@ -21,7 +19,7 @@ STATE_DEBUG = False
 
 # YOLO 모델 로드
 try:
-    model = YOLO('best_add.pt')
+    model = YOLO('best.pt')
 
 except Exception as e:
     raise RuntimeError(f"YOLO model loading failed: {str(e)}")
@@ -53,7 +51,7 @@ def dashboard():
     if DEBUG: print('🚨 dashboard >>>')
     return render_template('dashboard.html')
 
-STATE = 'PAUSE'
+MOVING = 'PAUSE'
 TURRET_FIRST_ROTATING = True
 TURRET_HIT = -1
 
@@ -81,7 +79,7 @@ def detect():
     # 3. 탐지 결과 필터링
     target_classes = {
         0: 'Car002', 1: 'Car003', 2: 'Car005', 3: 'Human001',
-        4: 'Rock001', 5: 'Tank001', 6: 'Wall001'
+        4: 'Rock001', 5: 'Rock2', 6: 'Tank001', 7: 'Wall001', 8: 'Wall002'
     }
     class_colors = {
         'car002': '#FF0000', 'car003': '#0000FF', 'car005': '#00FF00', 'human001': 'orange',
@@ -123,10 +121,7 @@ def detect():
     if STATE_DEBUG : print('1 🤩🤩TURRET_HIT', TURRET_HIT)
 
     nearest_enemy = {'state': False}
-    enemy_list = []
-    dead_enemy_list = []
-    if STATE == 'PAUSE':
-        # enemy_list = get_enemy_pos.get_enemy_list(filtered_results, player_data, obstacles_from_map)
+    if MOVING == 'PAUSE':
         nearest_enemy = get_enemy_pos.find_nearest_enemy(filtered_results, player_data, obstacles_from_map)
     print('📀 nearest_enemy', nearest_enemy)
     if nearest_enemy['state'] and TURRET_FIRST_ROTATING:
@@ -172,7 +167,7 @@ def info():
         'body_y': data.get('playerBodyY'),
         'body_z': data.get('playerBodyZ'),
     }
-    if DEBUG: print(f"📍 Player data updated: {player_data}")
+    # if DEBUG: print(f"📍 Player data updated: {player_data}")
     return jsonify({"status": "success", "control": ""})
 
 @app.route('/update_position', methods=['POST'])
@@ -208,33 +203,18 @@ def get_move():
         return jsonify(command)
     else:
         return jsonify({"move": "STOP", "weight": 1.0})
-    
-@app.route('/get_action', methods=['POST'])
+
+@app.route('/get_action', methods=['GET'])
 def get_action():
     global TURRET_FIRST_ROTATING, TURRET_HIT, MOVING
-    global action_command, latest_nearest_enemy, is_rotating
-    data = request.get_json(force=True)
-
-    position = data.get("position", {})
-    turret = data.get("turret", {})
-
-    pos_x = position.get("x", 0)
-    pos_y = position.get("y", 0)
-    pos_z = position.get("z", 0)
-
-    turret_x = turret.get("x", 0)
-    turret_y = turret.get("y", 0)
-
-    print(f"📨 Position received: x={pos_x}, y={pos_y}, z={pos_z}")
-    print(f"🎯 Turret received: x={turret_x}, y={turret_y}")
-    
+    global action_command, latest_nearest_enemy
+    if DEBUG: print('🚨 get_action >>>', action_command)
     if action_command:
         TURRET_FIRST_ROTATING = False
         command = action_command.pop(0)
-        start_rotation()
         if DEBUG: print(f"🔫 Action Command: {command}")
         
-        if TURRET_HIT == 1 and command['turretQE']['command'] == 'STOP':
+        if TURRET_HIT == 1 and command['turret'] != 'FIRE' and command['weight'] == 0.0:
             # reverse 끝나는 지점
             TURRET_FIRST_ROTATING = True
             TURRET_HIT = -1
@@ -243,18 +223,9 @@ def get_action():
             if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_FIRST_ROTATING t', TURRET_FIRST_ROTATING)
             if STATE_DEBUG : print('5 🤩🤩reverse end - TURRET_HIT -1', TURRET_HIT)
 
+        return jsonify(command)
     else:
-        # rotation_controller.degree_check_and_stop(player_data, action_command)
-        # print("최종 정지!")
-        command = {
-            "moveWS": {"command": "STOP", "weight": 1.0},
-            "moveAD": {"command": "", "weight": 0.0},
-            "turretQE": {"command": "", "weight": 0.0},
-            "turretRF": {"command": "", "weight": 0.0},
-            "fire": False
-        }
-
-    return jsonify(command)
+        return jsonify({"turret": "", "weight": 0.0})
 
 @app.route('/update_bullet', methods=['POST'])
 def update_bullet():
@@ -388,23 +359,36 @@ def init():
 def start():
     global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
-    map_path = 'NewMap.map'
+    map_path = './NewMap.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
 
-def get_player_data():
-    return player_data
+@app.route('/test_rotation', methods=['POST'])
+def test_rotation():
+    global action_command
+    if DEBUG: print('🚨 test_rotation >>>')
+    data = request.get_json()
+    rotation_type = data.get('type', 'Q')
+    count = data.get('count', 1)
 
-@app.route('/start_rotation', methods=['POST'])
-def start_rotation():
-    print("🫡🛞/start_rotation")
-    global action_command, player_data
-    print("BEFORE",player_data)
-    import threading
-    threading.Thread(target=rotation_controller.start_rotation_10degree, args=(get_player_data, action_command)).start()
-    print("AFTER", player_data)
-    return jsonify({"status": "started"})
+    action_command = []
+    for _ in range(count):
+        action_command.append({"turret": rotation_type, "weight": 0.5})
+    action_command.append({"turret": rotation_type, "weight": 0.0})
+
+    test_info = {
+        'rotation_type': rotation_type,
+        'count': count,
+        'timestamp': time.strftime('%H:%M:%S'),
+        'rotation_desc': {
+            'Q': 'Left', 'E': 'Right', 'F': 'Down', 'R': 'Up'
+        }.get(rotation_type, 'Unknown')
+    }
+    if DEBUG: print(f"🔄 Testing {test_info['rotation_desc']} rotation ({rotation_type}) x {count}")
+    socketio.emit('rotation_test', test_info)
+    if DEBUG: print("action_command >>", action_command)
+    return jsonify({"status": "OK", "message": "Rotation test started"})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

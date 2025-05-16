@@ -7,7 +7,7 @@ from ultralytics import YOLO
 import time
 import json
 import modules.turret as turret
-import modules.get_enemy_pos as get_enemy_pos
+import modules.get_enemy_pos_for_rotation as get_enemy_pos
 import math
 import pdb
 import threading
