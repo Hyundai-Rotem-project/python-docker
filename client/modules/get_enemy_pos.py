@@ -114,8 +114,9 @@ def get_enemy_list(detections, player_data, obstacles):
     
     print('valid_enemies', valid_enemies)
     sorted_valid_enemies = sorted(valid_enemies, key=lambda x: x['distance'])
+    enemy_list = {'list': sorted_valid_enemies, 'state': True}
 
-    return sorted_valid_enemies
+    return enemy_list
 
 def find_nearest_enemy(detections, player_data, obstacles):
     """가장 가까운 적 반환 (1200m 이내 적만 valid_enemies로 간주)"""
