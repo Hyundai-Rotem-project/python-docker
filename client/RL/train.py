@@ -1,6 +1,6 @@
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
-from tank_env import TankNavigationEnv
+from tank_env import TankEnv
 from gym.envs.registration import register
 import get_obstacles_point as get_obstacles
 
@@ -14,7 +14,7 @@ register(
 )
 
 # 3. 환경 생성 및 장애물 세팅
-env = TankNavigationEnv()
+env = TankEnv()
 env.set_obstacles_from_list(obstacle_list, x_range=300, z_range=300, x_min=0, z_min=0)
 check_env(env)
 
