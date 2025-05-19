@@ -35,6 +35,7 @@ log.addFilter(PathFilter())
 socketio = SocketIO(app)
 
 # 전역 변수
+map_path = 'client/NewMap_wilderness3.map'
 move_command = []
 action_command = []
 player_data = {'pos': {'x': 50, 'y': 10, 'z': 57}}  # 기본 위치 설정
@@ -61,7 +62,8 @@ last_weight  = 0.0
 
 # ── 상수 ──
 ROTATION_THRESHOLD_DEG = 1    # 회전 완료 기준 (°)
-STOP_DISTANCE = 60.0          # 정지 거리 (m)
+STOP_DISTANCE = 5.0          # 정지 거리 (m)
+# STOP_DISTANCE = 60.0          # 정지 거리 (m)
 SLOWDOWN_DISTANCE = 100.0     # 감속 시작 거리 (m)
 ROTATION_TIMEOUT = 0.8        # 회전 최대 시간 (s)
 PAUSE_DURATION = 0.5          # 회전 후 일시정지 (s)
@@ -307,7 +309,8 @@ def info():
         cross = fx * tz - fz * tx
 
         # 도착 조건
-        if distance_to_destination <= STOP_DISTANCE or z_diff < 20.0:
+        if distance_to_destination <= STOP_DISTANCE or z_diff < 5.0:
+        # if distance_to_destination <= STOP_DISTANCE or z_diff < 20.0:
             state = "STOPPED"
         # 큰 방향 오류 시 재회전
         elif abs(deg) > ROTATION_THRESHOLD_DEG * 6:
@@ -479,15 +482,17 @@ def update_obstacle():
 
 @app.route('/init', methods=['GET'])
 def init():
-    global state, turret_hit_state, obstacles_from_map
+    global state, turret_hit_state, obstacles_from_map, map_path
     if DEBUG: print('🚨 init >>>')
 
     config = {
         "startMode": "start",
-        "blStartX": 70,
-        "blStartY": 10,
-        "blStartZ": 10,
-        # "blStartZ": 45,
+        "blStartX": 140,
+        "blStartY": 8,
+        "blStartZ": 55,
+        # "blStartX": 70,
+        # "blStartY": 10,
+        # "blStartZ": 10,
         "rdStartX": 60,
         "rdStartY": 10,
         "rdStartZ": 280,
@@ -503,7 +508,6 @@ def init():
 
     turret_hit_state = -1
     state = 'IDLE'
-    map_path = 'client/NewMap4.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
 
     if DEBUG: print(f"🛠️ Initialization config sent via /init: {config}")
@@ -511,9 +515,8 @@ def init():
 
 @app.route('/start', methods=['GET'])
 def start():
-    global obstacles_from_map
+    global obstacles_from_map, map_path
     if DEBUG: print("🚀 /start command received")
-    map_path = 'client/NewMap4.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
@@ -545,7 +548,7 @@ def test_rotation():
     return jsonify({"status": "OK", "message": "Rotation test started"})
 
 def get_dashboard_state(state):
-    if state in ["IDLE", "ROTATING", "MOVING"]:
+    if state in ["ROTATING", "MOVING"]:
         return "이동 중"
     elif state == "STOPPED":
         return "적 탐지 중"
