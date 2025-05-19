@@ -2,12 +2,12 @@ from flask import Flask, request, jsonify
 import os
 import torch
 from ultralytics import YOLO
-
+from modules.RealTimeInference import RealTimeInference
 # Initialize Flask server
 app = Flask(__name__)
 
 # Load YOLO model
-model = YOLO('yolov8n.pt')
+model = YOLO('best.pt').to(device='cuda' if torch.cuda.is_available() else 'cpu')
 
 # Global variables for tank commands
 # Movement commands
@@ -32,7 +32,10 @@ def detect():
     detections = results[0].boxes.data.cpu().numpy()  # Extract bounding boxes
 
     # Filter only specific object classes
-    target_classes = {0: "person", 2: "car", 7: "truck", 15: "rock"}
+    target_classes = {
+                0: 'car2', 1: 'car3', 2: 'car5', 3: 'human', 4: 'rock',
+                5: 'tank', 6: 'wall'
+                }
     filtered_results = []
 
     for box in detections:
@@ -43,7 +46,15 @@ def detect():
                 'bbox': [float(coord) for coord in box[:4]],
                 'confidence': float(box[4])
             })
+    
+    left_dir = "C:/Users/Dhan/Documents/Tank Challenge/capture_images/L"
+    right_dir = "C:/Users/Dhan/Documents/Tank Challenge/capture_images/R"
+    log_path = "C:/Users/Dhan/Documents/Tank Challenge/log_data/tank_info_log.txt"
 
+
+    Inference = RealTimeInference()
+    y_pred = Inference.log2pred(left_dir,right_dir,log_path)
+    print(y_pred)
     return jsonify(filtered_results)
 
 
@@ -153,3 +164,5 @@ def update_obstacle():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
+
