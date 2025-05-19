@@ -18,7 +18,7 @@ DEBUG = True
 
 # YOLO 모델 로드
 try:
-    model = YOLO('best.pt')
+    model = YOLO('best_add.pt')
 
 except Exception as e:
     raise RuntimeError(f"YOLO model loading failed: {str(e)}")
@@ -109,13 +109,13 @@ def detect():
         return jsonify([])
 
     # 2. YOLO 탐지
-    results = model(image_path, imgsz=640)
+    results = model(image_path, imgsz=640, iou=0.3, conf=0.6)
     detections = results[0].boxes.data.cpu().numpy()
 
     # 3. 탐지 결과 필터링
     target_classes = {
         0: 'Car002', 1: 'Car003', 2: 'Car005', 3: 'Human001',
-        4: 'Rock001', 5: 'Rock2', 6: 'Tank001', 7: 'Wall001', 8: 'Wall002'
+        4: 'Rock001', 5: 'Tank001', 6: 'Wall001'
     }
     class_colors = {
         'car002': '#FF0000', 'car003': '#0000FF', 'car005': '#00FF00', 'human001': 'orange',
@@ -503,7 +503,7 @@ def init():
 
     turret_hit_state = -1
     state = 'IDLE'
-    map_path = 'client/NewMap.map'
+    map_path = 'client/NewMap4.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
 
     if DEBUG: print(f"🛠️ Initialization config sent via /init: {config}")
@@ -513,7 +513,7 @@ def init():
 def start():
     global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
-    map_path = 'client/NewMap.map'
+    map_path = 'client/NewMap4.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
@@ -544,10 +544,23 @@ def test_rotation():
     if DEBUG: print("action_command >>", action_command)
     return jsonify({"status": "OK", "message": "Rotation test started"})
 
+def get_dashboard_state(state):
+    if state in ["IDLE", "ROTATING", "MOVING"]:
+        return "이동 중"
+    elif state == "STOPPED":
+        return "적 탐지 중"
+    elif state in ["TURRET_PAUSE", "TURRET_ROTATING"]:
+        return "포격 중"
+    elif state == "END":
+        return "포격 완료"
+    else:
+        return "대기"
+
 @app.route('/get_state', methods=['GET'])
 def get_state():
     global state
-    return jsonify({"state": state})
+    dashboard_state = get_dashboard_state(state)
+    return jsonify({"state": state, "dashboard_state": dashboard_state})
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)

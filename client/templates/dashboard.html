@@ -4,216 +4,123 @@
     <title>YOLO Detection Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
         .stat-box {
             border: 1px solid #ddd;
             padding: 20px;
             border-radius: 8px;
             background-color: #f8f9fa;
-            margin: 20px;
-            max-width: 800px;
+            margin-bottom: 30px;
         }
-        .impact-log {
-            height: 500px;  /* 로그 창 높이 증가 */
+        .command-input {
+            display: flex;
+            gap: 10px;
+        }
+        #current-state-line {
+            font-size: 48px;
+            font-weight: bold;
+            color: #2196F3;
+            padding: 20px;
+        }
+        #impact-log {
+            height: 200px;
             overflow-y: auto;
+            font-size: 28px;
             font-family: monospace;
-            background-color: #2b2b2b;
+            background: #222;
             color: #fff;
+            border-radius: 8px;
             padding: 10px;
-            border-radius: 5px;
-        }
-        .impact-entry {
-            margin: 5px 0;
-            padding: 5px;
-            border-bottom: 1px solid #444;
-        }
-        .hit {
-            color: #4CAF50;
-        }
-        .miss {
-            color: #f44336;
-        }
-        .flex-container {
-            display: flex;
-            gap: 20px;
-            margin: 20px;
-        }
-        .flex-item {
-            flex: 1;
-        }
-        .state-box {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            height: 500px;
+            text-align: left;
         }
     </style>
 </head>
 <body>
-    <h1>Battle Log Dashboard</h1>
-    <div class="flex-container">
-        <div class="flex-item">
-            <div class="stat-box">
-                <h2>Bullet Impact Log</h2>
-                <div id="impact-log" class="impact-log"></div>
+    <div class="container">
+        <!-- 목적지 설정 -->
+        <div class="stat-box">
+            <h2>목적지 설정</h2>
+            <div class="command-input">
+                <input type="number" id="dest-x" placeholder="X" step="0.000001" style="width: 100px;">
+                <input type="number" id="dest-y" placeholder="Y" step="0.000001" style="width: 100px;">
+                <input type="number" id="dest-z" placeholder="Z" step="0.000001" style="width: 100px;">
+                <button onclick="setDestination()">입력</button>
             </div>
         </div>
-        <div class="flex-item">
-            <div class="stat-box state-box">
-                <h2>Current State</h2>
-                <div id="current-state" style="font-size: 48px; font-weight: bold; color: #2196F3; padding: 20px;">
-                    Loading...
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <div class="stat-box">
-        <h2>Destination Setting</h2>
-        <div class="command-input">
-            <input type="number" id="dest-x" placeholder="X" step="0.000001" style="width: 100px;">
-            <input type="number" id="dest-y" placeholder="Y" step="0.000001" style="width: 100px;">
-            <input type="number" id="dest-z" placeholder="Z" step="0.000001" style="width: 100px;">
-            <button onclick="setDestination()">Set Destination</button>
+        <!-- 상태만 나타내는 창 -->
+        <div class="stat-box" style="text-align: center; margin-bottom: 15px; padding: 10px 0;">
+            <div id="current-state-line" style="font-size: 24px; font-weight: bold; color: #2196F3; padding: 4px 0;">Loading...</div>
         </div>
-        <div id="destination-log" class="impact-log"></div>
+
+        <!-- 포격 결과 로그 -->
+        <div class="stat-box" style="text-align: center;">
+            <h2>포격 결과</h2>
+            <div id="impact-log"></div>
+        </div>
     </div>
 
     <script>
         const socket = io();
         const impactLog = document.getElementById('impact-log');
-        const rotationLog = document.getElementById('rotation-log');
-        const currentState = document.getElementById('current-state');
-        
+
+        // 포격 결과 로그 쌓기
         socket.on('bullet_impact', function(data) {
             const entry = document.createElement('div');
-            entry.className = 'impact-entry';
-            entry.innerHTML = `
-                [${data.timestamp}] Impact at (X: ${data.x.toFixed(2)}, Y: ${data.y.toFixed(2)}, Z: ${data.z.toFixed(2)})
-                <br>
-                &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                Taget Position (X: ${data.tx.toFixed(2)}, Y: ${data.ty.toFixed(2)}, Z: ${data.tz.toFixed(2)})
-                <br>
-                &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                Result: <span class="${data.hit ? 'hit' : 'miss'}">
-                     ${data.hit ? 'HIT' : 'MISS'}
-               
-            `;
-            
+            entry.textContent = `[${data.timestamp}] ${data.hit ? 'HIT' : 'MISS'}`;
+            entry.style.color = data.hit ? '#4CAF50' : '#F44336';
+            entry.style.fontWeight = 'bold';
             impactLog.insertBefore(entry, impactLog.firstChild);
-            
-            if (impactLog.children.length > 100) {
+            if (impactLog.children.length > 50) {
                 impactLog.removeChild(impactLog.lastChild);
             }
         });
 
-        socket.on('rotation_test', function(data) {
-            const entry = document.createElement('div');
-            entry.className = 'impact-entry';
-            entry.innerHTML = `
-                [${data.timestamp}] ${data.rotation_desc} rotation (${data.rotation_type}) x ${data.count}
-            `;
-            
-            rotationLog.insertBefore(entry, rotationLog.firstChild);
-            
-            if (rotationLog.children.length > 100) {
-                rotationLog.removeChild(rotationLog.lastChild);
-            }
-        });
-
-        function testRotation() {
-            const rotationType = document.getElementById('rotation-type').value;
-            const rotationCount = parseInt(document.getElementById('rotation-count').value);
-            
-            fetch('/test_rotation', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    type: rotationType,
-                    count: rotationCount
-                })
-            });
-        }
-
+        // 목적지 설정
         function setDestination() {
             const x = parseFloat(document.getElementById('dest-x').value);
             const y = parseFloat(document.getElementById('dest-y').value);
             const z = parseFloat(document.getElementById('dest-z').value);
-            
             if (isNaN(x) || isNaN(y) || isNaN(z)) {
-                alert('Please enter valid numbers for all coordinates');
+                alert('좌표를 모두 입력하세요');
                 return;
             }
-
             fetch('/set_destination', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    destination: `${x},${y},${z}`
-                })
+                body: JSON.stringify({ destination: `${x},${y},${z}` })
             })
             .then(response => response.json())
             .then(data => {
-                const entry = document.createElement('div');
-                entry.className = 'impact-entry';
-                entry.innerHTML = `
-                    [${new Date().toLocaleTimeString()}] New destination set: (X: ${x.toFixed(6)}, Y: ${y.toFixed(6)}, Z: ${z.toFixed(6)})
-                `;
-                document.getElementById('destination-log').insertBefore(entry, document.getElementById('destination-log').firstChild);
+                // 입력 후 입력창 비우기
+                document.getElementById('dest-x').value = '';
+                document.getElementById('dest-y').value = '';
+                document.getElementById('dest-z').value = '';
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Failed to set destination');
+                alert('목적지 설정 실패');
             });
         }
 
-        // state 업데이트 함수
+        // 상태 업데이트
         function updateState() {
             fetch('/get_state')
                 .then(response => response.json())
                 .then(data => {
-                    currentState.textContent = data.state;
-                    // state에 따른 색상 변경
-                    switch(data.state) {
-                        case 'IDLE':
-                            currentState.style.color = '#9E9E9E';  // 회색
-                            break;
-                        case 'ROTATING':
-                            currentState.style.color = '#FF9800';  // 주황색
-                            break;
-                        case 'MOVING':
-                            currentState.style.color = '#4CAF50';  // 초록색
-                            break;
-                        case 'STOPPED':
-                            currentState.style.color = '#F44336';  // 빨간색
-                            break;
-                        case 'TURRET_PAUSE':
-                            currentState.style.color = '#2196F3';  // 파란색
-                            break;
-                        case 'TURRET_ROTATING':
-                            currentState.style.color = '#9C27B0';  // 보라색
-                            break;
-                        case 'END':
-                            currentState.style.color = '#000000';  // 검정색
-                            break;
-                        default:
-                            currentState.style.color = '#2196F3';  // 기본 파란색
-                    }
+                    document.getElementById('current-state-line').textContent = data.dashboard_state;
+                    // 색상 등은 필요에 따라 추가
                 })
                 .catch(error => {
-                    console.error('Error fetching state:', error);
-                    currentState.textContent = 'Error';
-                    currentState.style.color = '#F44336';
+                    document.getElementById('current-state-line').textContent = 'Error';
                 });
         }
-
-        // 1초마다 state 업데이트
         setInterval(updateState, 1000);
-        // 초기 state 로드
         updateState();
     </script>
 </body>

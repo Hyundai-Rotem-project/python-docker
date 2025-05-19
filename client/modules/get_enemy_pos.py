@@ -72,7 +72,7 @@ def get_enemy_list(detections, player_data, obstacles):
     player_pos = player_data['pos']
     logging.debug(f"Starting find_nearest_enemy with {len(detections)} detections, player_pos: {player_pos}, obstacles: {len(obstacles)}")
     
-    enemy_classes = {'Car002', 'Tank001'}  # 적 클래스
+    enemy_classes = {'Tank001'}  # 적 클래스
     detected_classes = {det['className'] for det in detections if det['className'] in enemy_classes and det['confidence'] >= 0.3}
     logging.debug(f"Detected classes: {detected_classes}")
     
