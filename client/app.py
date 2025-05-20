@@ -18,7 +18,7 @@ DEBUG = True
 
 # YOLO 모델 로드
 try:
-    model = YOLO('best_add.pt')
+    model = YOLO('best.pt')
 
 except Exception as e:
     raise RuntimeError(f"YOLO model loading failed: {str(e)}")
@@ -61,7 +61,7 @@ last_weight  = 0.0
 
 # ── 상수 ──
 ROTATION_THRESHOLD_DEG = 1    # 회전 완료 기준 (°)
-STOP_DISTANCE = 60.0          # 정지 거리 (m)
+STOP_DISTANCE = 5.0          # 정지 거리 (m)
 SLOWDOWN_DISTANCE = 100.0     # 감속 시작 거리 (m)
 ROTATION_TIMEOUT = 0.8        # 회전 최대 시간 (s)
 PAUSE_DURATION = 0.5          # 회전 후 일시정지 (s)
@@ -307,10 +307,10 @@ def info():
         cross = fx * tz - fz * tx
 
         # 도착 조건
-        if distance_to_destination <= STOP_DISTANCE or z_diff < 20.0:
+        if distance_to_destination <= STOP_DISTANCE or z_diff < 1.0:
             state = "STOPPED"
         # 큰 방향 오류 시 재회전
-        elif abs(deg) > ROTATION_THRESHOLD_DEG * 6:
+        elif abs(deg) > ROTATION_THRESHOLD_DEG * 3:
             state = "ROTATING"
             rotation_start_time = time.time()
             control = "A" if cross > 0 else "D"
@@ -503,7 +503,7 @@ def init():
 
     turret_hit_state = -1
     state = 'IDLE'
-    map_path = 'client/NewMap4.map'
+    map_path = 'NewMap.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
 
     if DEBUG: print(f"🛠️ Initialization config sent via /init: {config}")
@@ -513,7 +513,7 @@ def init():
 def start():
     global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
-    map_path = 'client/NewMap4.map'
+    map_path = 'NewMap.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
