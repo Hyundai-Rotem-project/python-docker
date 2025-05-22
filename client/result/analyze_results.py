@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
-result_path = './hit_rate_log.csv'
+result_path = './hit_rate_log.csv' # /hit_rate_angle_vs_coord.csv
 output_dir = 'report'
 
 # 출력 디렉토리 없으면 생성
