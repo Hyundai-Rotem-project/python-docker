@@ -7,7 +7,7 @@ from ultralytics import YOLO
 import time
 import json
 import modules.turret as turret
-import modules.get_enemy_pos_total as get_enemy_pos
+import modules.get_enemy_pos as get_enemy_pos
 import modules.get_obstacles as get_obstacles
 import math
 import os
@@ -521,7 +521,7 @@ def init():
 def start():
     global obstacles_from_map
     if DEBUG: print("🚀 /start command received")
-    map_path = 'client/NewMap2.map'
+    map_path ='./NewMap2.map'
     obstacles_from_map = get_obstacles.load_obstacles_from_map(map_path)
     print('obstacles_from_map', obstacles_from_map)
     return jsonify({"control": ""})
