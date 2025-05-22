@@ -1,0 +1,7 @@
+algorithm,trial,total_targets,total_fire_count,hit_count,hit_rate
+triangulation,1,4,2,2,1
+triangulation,2,4,2,2,1
+triangulation,3,4,2,2,1
+depth_only,1,4,3,2,0.67
+regression,1,4,4,3,0.75
+regression,2,4,4,3,0.75
