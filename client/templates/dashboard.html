@@ -4,118 +4,124 @@
     <title>YOLO Detection Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
         .stat-box {
             border: 1px solid #ddd;
             padding: 20px;
             border-radius: 8px;
             background-color: #f8f9fa;
-            margin: 20px;
-            max-width: 800px;
+            margin-bottom: 30px;
         }
-        .impact-log {
-            height: 500px;  /* 로그 창 높이 증가 */
+        .command-input {
+            display: flex;
+            gap: 10px;
+        }
+        #current-state-line {
+            font-size: 48px;
+            font-weight: bold;
+            color: #2196F3;
+            padding: 20px;
+        }
+        #impact-log {
+            height: 200px;
             overflow-y: auto;
+            font-size: 28px;
             font-family: monospace;
-            background-color: #2b2b2b;
+            background: #222;
             color: #fff;
+            border-radius: 8px;
             padding: 10px;
-            border-radius: 5px;
-        }
-        .impact-entry {
-            margin: 5px 0;
-            padding: 5px;
-            border-bottom: 1px solid #444;
-        }
-        .hit {
-            color: #4CAF50;
-        }
-        .miss {
-            color: #f44336;
+            text-align: left;
         }
     </style>
 </head>
 <body>
-    <h1>Battle Log Dashboard</h1>
-    <div class="stat-box">
-        <h2>Bullet Impact Log</h2>
-        <div id="impact-log" class="impact-log"></div>
-    </div>
+    <div class="container">
+        <!-- 목적지 설정 -->
+        <div class="stat-box">
+            <h2>목적지 설정</h2>
+            <div class="command-input">
+                <input type="number" id="dest-x" placeholder="X" step="0.000001" style="width: 100px;">
+                <input type="number" id="dest-y" placeholder="Y" step="0.000001" style="width: 100px;">
+                <input type="number" id="dest-z" placeholder="Z" step="0.000001" style="width: 100px;">
+                <button onclick="setDestination()">입력</button>
+            </div>
+        </div>
 
-    <div class="stat-box">
-        <h2>Rotation Test</h2>
-        <div class="command-input">
-            <select id="rotation-type">
-                <option value="Q">Left (Q)</option>
-                <option value="E">Right (E)</option>
-                <option value="R">Up (R)</option>
-                <option value="F">Down (F)</option>
-            </select>
-            <input type="number" id="rotation-count" value="1" min="1" max="10" style="width: 60px;">
-            <button onclick="testRotation()">Test Rotation</button>
+        <!-- 상태만 나타내는 창 -->
+        <div class="stat-box" style="text-align: center; margin-bottom: 15px; padding: 10px 0;">
+            <div id="current-state-line" style="font-size: 24px; font-weight: bold; color: #2196F3; padding: 4px 0;">Loading...</div>
         </div>
-        <div class="rotation-info">
-            <p>Left/Right (Q/E): Horizontal rotation</p>
-            <p>Up/Down (R/F): Vertical rotation</p>
+
+        <!-- 포격 결과 로그 -->
+        <div class="stat-box" style="text-align: center;">
+            <h2>포격 결과</h2>
+            <div id="impact-log"></div>
         </div>
-        <div id="rotation-log" class="impact-log"></div>
     </div>
 
     <script>
         const socket = io();
         const impactLog = document.getElementById('impact-log');
-        const rotationLog = document.getElementById('rotation-log');
-        
+
+        // 포격 결과 로그 쌓기
         socket.on('bullet_impact', function(data) {
             const entry = document.createElement('div');
-            entry.className = 'impact-entry';
-            entry.innerHTML = `
-                [${data.timestamp}] Impact at (X: ${data.x.toFixed(2)}, Y: ${data.y.toFixed(2)}, Z: ${data.z.toFixed(2)})
-                <br>
-                &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                Taget Position (X: ${data.tx.toFixed(2)}, Y: ${data.ty.toFixed(2)}, Z: ${data.tz.toFixed(2)})
-                <br>
-                &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                Result: <span class="${data.hit ? 'hit' : 'miss'}">
-                     ${data.hit ? 'HIT' : 'MISS'}
-               
-            `;
-            
+            entry.textContent = `[${data.timestamp}] ${data.hit ? 'HIT' : 'MISS'}`;
+            entry.style.color = data.hit ? '#4CAF50' : '#F44336';
+            entry.style.fontWeight = 'bold';
             impactLog.insertBefore(entry, impactLog.firstChild);
-            
-            if (impactLog.children.length > 100) {
+            if (impactLog.children.length > 50) {
                 impactLog.removeChild(impactLog.lastChild);
             }
         });
 
-        socket.on('rotation_test', function(data) {
-            const entry = document.createElement('div');
-            entry.className = 'impact-entry';
-            entry.innerHTML = `
-                [${data.timestamp}] ${data.rotation_desc} rotation (${data.rotation_type}) x ${data.count}
-            `;
-            
-            rotationLog.insertBefore(entry, rotationLog.firstChild);
-            
-            if (rotationLog.children.length > 100) {
-                rotationLog.removeChild(rotationLog.lastChild);
+        // 목적지 설정
+        function setDestination() {
+            const x = parseFloat(document.getElementById('dest-x').value);
+            const y = parseFloat(document.getElementById('dest-y').value);
+            const z = parseFloat(document.getElementById('dest-z').value);
+            if (isNaN(x) || isNaN(y) || isNaN(z)) {
+                alert('좌표를 모두 입력하세요');
+                return;
             }
-        });
-
-        function testRotation() {
-            const rotationType = document.getElementById('rotation-type').value;
-            const rotationCount = parseInt(document.getElementById('rotation-count').value);
-            
-            fetch('/test_rotation', {
+            fetch('/set_destination', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    type: rotationType,
-                    count: rotationCount
-                })
+                body: JSON.stringify({ destination: `${x},${y},${z}` })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 입력 후 입력창 비우기
+                document.getElementById('dest-x').value = '';
+                document.getElementById('dest-y').value = '';
+                document.getElementById('dest-z').value = '';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('목적지 설정 실패');
             });
         }
+
+        // 상태 업데이트
+        function updateState() {
+            fetch('/get_state')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('current-state-line').textContent = data.dashboard_state;
+                    // 색상 등은 필요에 따라 추가
+                })
+                .catch(error => {
+                    document.getElementById('current-state-line').textContent = 'Error';
+                });
+        }
+        setInterval(updateState, 1000);
+        updateState();
     </script>
 </body>
 </html>
