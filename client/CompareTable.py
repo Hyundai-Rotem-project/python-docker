@@ -1,22 +1,24 @@
-import os, torch, cv2
+import os, torch, cv2, glob
 import pandas as pd
 import numpy as np
 from ultralytics import YOLO
 from modules.StereoRegression import DistCalculator,StereoPreprocess, StereoRegression
 import joblib
 
-class RealTimeInference:
+
+class CompareTable:
     def __init__(self, model_path=None):
         if model_path is None:
             self.model_path = 'best.pt'
         else:
-            self.model_path=model_path
+            self.model_path = model_path
+        print(self.model_path)
         self.model = YOLO(self.model_path).to('cuda' if torch.cuda.is_available() else 'cpu')
         self.target_classes = {
             0: 'Car002', 1: 'Car003', 2: 'Car005', 3: 'Human001',
             4: 'Rock001', 5: 'Rock2', 6: 'Tank001', 7: 'Wall001', 8: 'Wall002'
         }
-
+        return
     def detect(self, image_path):
         """
         image_path에 해당하는 이미지 하나에 대한 이미지 디텍션
@@ -34,56 +36,58 @@ class RealTimeInference:
                     'confidence': float(box[4])
                 })
         return filtered_results
+    
+    def get_obj_center(self, img_path):
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model = YOLO('best.pt').to(device)
+        results = model(img_path)
+        detections = results[0].boxes.data.cpu().numpy()
+    
+        if len(detections) == 0:
+            raise ValueError("객체가 탐지되지 않았습니다.")
 
-    def prepare_log(self,log_path):
-        """
-        log_data.colulmns : Time,Distance,Player_Pos_X,Player_Pos_Y,Player_Pos_Z,Player_Speed,Player_Health,Player_Turret_X,Player_Turret_Y,Player_Body_X,Player_Body_Y,Player_Body_Z,TurretCam_X,TurretCam_Y,TurretCam_Z,StereoL_X,StereoL_Y,StereoL_Z,StereoL_Roll,StereoL_Pitch,StereoL_Yaw,StereoR_X,StereoR_Y,StereoR_Z,StereoR_Roll,StereoR_Pitch,StereoR_Yaw,Enemy_Pos_X,Enemy_Pos_Y,Enemy_Pos_Z,Enemy_Speed,Enemy_Health,Enemy_Turret_X,Enemy_Turret_Y,Enemy_Body_X,Enemy_Body_Y,Enemy_Body_Z
-        return : 
-            y : ['Distance', 'Enemy_Pos_X', 'Enemy_Pos_Y', 'Enemy_Pos_Z']
+        # 예: 첫 번째 탐지 객체만 사용
+        box = detections[0]
+        bx = int((box[0] + box[2]) / 2)
+        by = int((box[1] + box[3]) / 2)
+        return bx, by
 
-            X : ['Player_Pos_X', 'Player_Pos_Y', 'Player_Pos_Z','Player_Body_X', 'Player_Body_Y', 'Player_Body_Z',
-                'StereoL_X', 'StereoL_Y', 'StereoL_Z', 'StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw', 'StereoR_X','StereoR_Y', 'StereoR_Z',
-                'bx_left', 'by_left','bx_right', 'by_right', 'box_size_left', 'box_size_right', 'disparity', 
-                'estimated_distance', 'est_dir_x', 'est_dir_y', 'est_dir_z']
-        """
-        log_columns = [
-            "Time", "Distance",
-            "Player_Pos_X", "Player_Pos_Y", "Player_Pos_Z",
-            "Player_Speed", "Player_Health",
-            "Player_Turret_X", "Player_Turret_Y",
-            "Player_Body_X", "Player_Body_Y", "Player_Body_Z",
-            "TurretCam_X", "TurretCam_Y", "TurretCam_Z",
-            "StereoL_X", "StereoL_Y", "StereoL_Z", "StereoL_Roll", "StereoL_Pitch", "StereoL_Yaw",
-            "StereoR_X", "StereoR_Y", "StereoR_Z", "StereoR_Roll", "StereoR_Pitch", "StereoR_Yaw",
-            "Enemy_Pos_X", "Enemy_Pos_Y", "Enemy_Pos_Z",
-            "Enemy_Speed", "Enemy_Health",
-            "Enemy_Turret_X", "Enemy_Turret_Y",
-            "Enemy_Body_X", "Enemy_Body_Y", "Enemy_Body_Z"
-        ]
-        # 가장 마지막 로그
-        log_data=pd.read_csv(log_path)
-        if len(log_data) > 0:
-            latest_log = log_data.iloc[-1]
-        else:
-            # 초기값 0으로 채워진 Series 생성
-            latest_log = pd.DataFrame([[0] * len(log_columns)], columns=log_columns)
-            
-        return latest_log
-    def preapare_image(self,left_dir,right_dir):
-        # 폴더 내 모든 파일 목록 가져오기
-        left_files = os.listdir(left_dir)
-        right_files = os.listdir(right_dir)
-        # 마지막 이미지 선택
-        sorted_files = sorted(left_files, key=lambda x: float(x.replace('.png', '')))
-        left_img_path = os.path.join(left_dir, sorted_files[-1])
-        right_img_path = os.path.join(right_dir, sorted_files[-1])
+    # =========================
+    # [2] 스테레오 거리 추정 파이프라인
+    # =========================
+    def stereo_distance_pipeline(self, left_img_path, right_img_path, Q):
+        # (1) 이미지 불러오기
+        imgL = cv2.imread(left_img_path, 0)
+        imgR = cv2.imread(right_img_path, 0)
 
-        return left_img_path, right_img_path
+        # (2) 스테레오 정합 설정
+        stereo = cv2.StereoSGBM_create(
+            numDisparities=16 * 5,
+            blockSize=9,
+            minDisparity=0,
+            P1=8 * 3 * 3 ** 2,
+            P2=32 * 3 * 3 ** 2,
+            disp12MaxDiff=1,
+            uniquenessRatio=10,
+            speckleWindowSize=100,
+            speckleRange=32
+        )
 
+        disparity = stereo.compute(imgL, imgR).astype(np.float32) / 16.0
+
+        # (3) Q 행렬 기반으로 3D 포인트 재구성
+        points_3D = cv2.reprojectImageTo3D(disparity, Q)
+
+        # (4) YOLO로 바운딩 박스 중심 추출 (왼쪽 이미지 기준)
+        bx, by = self.get_obj_center(left_img_path)
+
+        # (5) 해당 픽셀 위치의 3D 좌표 반환
+        point_3D = points_3D[by, bx]
+        return point_3D
     def detection2list(self,img_path,detect_model_path = None):
         if detect_model_path is None:
-            detect_model_path = 'best.pt'
-        detect_model=YOLO(detect_model_path).to('cuda' if torch.cuda.is_available() else 'cpu')
+            detect_model_path = self.model_path
+        detect_model = YOLO(detect_model_path)
         target_classes =self.target_classes
         results = detect_model(img_path)
         detections = results[0].boxes.data.cpu().numpy()
@@ -154,10 +158,10 @@ class RealTimeInference:
 
     def add_estimated_dist_to_matches(self,matches,latest_log):
         calc = DistCalculator()
-        stereoL_pos = latest_log[['StereoL_X', 'StereoL_Y', 'StereoL_Z']] 
-        stereoL_rot =latest_log[['StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw']]
-        stereoR_pos = latest_log[['StereoR_X','StereoR_Y', 'StereoR_Z']]
-        stereoR_rot = latest_log[['StereoR_Roll', 'StereoR_Pitch', 'StereoR_Yaw']]
+        stereoL_pos = latest_log[['StereoL_X', 'StereoL_Y', 'StereoL_Z']].squeeze()
+        stereoL_rot =latest_log[['StereoL_Roll', 'StereoL_Pitch', 'StereoL_Yaw']].squeeze()
+        stereoR_pos = latest_log[['StereoR_X','StereoR_Y', 'StereoR_Z']].squeeze()
+        stereoR_rot = latest_log[['StereoR_Roll', 'StereoR_Pitch', 'StereoR_Yaw']].squeeze()
         for idx, detection_pair in enumerate(matches):
             det_L = detection_pair[0]
             bx_left, by_left = det_L['box_center']
@@ -183,10 +187,8 @@ class RealTimeInference:
         disparity_img = stereo.compute(img_L, img_R).astype(np.float32) / 16.0
         return disparity_img
 
-
-    def log2pred(self, left_dir, right_dir, log_path):
-        latest_log=self.prepare_log(log_path)
-        left_img_path, right_img_path = self.preapare_image(left_dir,right_dir)
+    def log2pred(self, left_img_path, right_img_path, log_row):
+        latest_log=log_row
         left_detection_list=self.detection2list(left_img_path)
         right_detection_list=self.detection2list(right_img_path)
         
@@ -225,7 +227,7 @@ class RealTimeInference:
                            'box_size_left': box_size_left, 'box_size_right': box_size_right,
                            'estimated_distance': estimated_dist,
                            'disparity': disparity_val}
-            log_dict=log_X.to_dict()
+            log_dict=log_X.to_dict(orient='records')[0]
             combined_dict = {**log_dict, **box_info_dict}
             X = pd.DataFrame([combined_dict])
             inference_model = joblib.load('random_forest_model.pkl')
@@ -239,20 +241,52 @@ class RealTimeInference:
             y_pred_list.append(y_pred_dict)
 
         return {'list':y_pred_list,'state':True}, triangulation_result #(array)[  [className,Distance,X,Y,Z],    [...],[...],...]
-'''
-log2pred return example
-{
-   'list': [
-      {'x': 80.7196044921875, 'z': 93.86923217773438, 'y': 8.59999942779541, 'className': 'Tank001', 'distance': 52.082536004902224, 'id': 'Tank001_10'}, 
-      {'x': 69.21346282958984, 'z': 111.47816467285156, 'y': 8.59999942779541, 'className': 'Tank001', 'distance': 69.15942495564691, 'id': 'Tank001_0'}, 
-      {'x': 107.071044921875, 'z': 124.05581665039062, 'y': 8.59999942779541, 'className': 'Tank001', 'distance': 88.58624628475042, 'id': 'Tank001_2'}
-   ], 
-   'state': True
-}
-#================================================================================================================================================================
-inference = RealTimeInference()
-y_pred = inference.log2pred(left_dir,right_dir,log_path)
-log = inference.prepare_log(log_path)
-print('y_pred:',y_pred)x
-print('log',log[['Enemy_Pos_X','Enemy_Pos_Y','Enemy_Pos_Z']])
-'''
+    
+    def compare_table(self, left_img_dir, right_img_dir, log_path):
+        log_data = pd.read_csv(log_path)
+        image_files = glob.glob(os.path.join(left_img_dir, '*.png'))
+        fx = 889.17
+        fy =889.17
+        cx = 512
+        cy = 512
+        baseline = 1.0
+
+        Q = np.float32([
+            [1, 0, 0, -cx],
+            [0, 1, 0, -cy],
+            [0, 0, 0, fx],
+            [0, 0, -1/baseline, 0]
+            ])
+        
+        reg_tri_results=[]
+        for filename in image_files:
+            basename = os.path.splitext(os.path.basename(filename))[0]
+
+            log_matched = log_data[log_data['Time'] == float(basename)]
+
+            results = []
+            if not log_matched.empty:
+                left_img_path = os.path.join(left_img_dir, basename + '.png')
+                right_img_path = os.path.join(right_img_dir, basename + '.png')
+                reg_pred, tri_pred = self.log2pred(left_img_path, right_img_path, log_matched)
+                #disp_pred = self.stereo_distance_pipeline(left_img_path, right_img_path, Q)
+                for reg_result in reg_pred['list']:
+                    result = {'Time':basename,
+                              #'obj_pos':log_matched[['']], #obj distance - pred_distance < threshhold 
+                              'reg_pred':reg_result,
+                              'tri_pred': tri_pred}
+                    results.append(result)
+            else:
+                print(f"No log match for {basename}")
+            reg_tri_results.append(results)        
+
+        return reg_tri_results
+
+    
+left_dir = 'C:\\Users\\Dhan\\Desktop\\Project3\\snapshot\\L'
+right_dir = 'C:\\Users\\Dhan\\Desktop\\Project3\\snapshot\\R'
+log_path = 'C:\\Users\\Dhan\\Desktop\\Project3\\snapshot\\tank_info_log.txt'
+table_maker = CompareTable(model_path='C:\\Users\\Dhan\\Desktop\\Project3\\best.pt')
+results = table_maker.compare_table(left_dir, right_dir, log_path)
+
+print(results)

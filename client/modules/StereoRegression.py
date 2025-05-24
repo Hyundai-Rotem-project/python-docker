@@ -22,6 +22,12 @@ class DistCalculator:
                 [0, fy, cy],
                 [0, 0, 1]
             ])
+    def get_obj_dist_pitch_yaw(self, bx, by, camera_pos, camera_rot):
+        u = (bx-256)/256
+        v = -(by-256)/256
+        roll, pitch, yaw = camera_rot
+        return
+
     def pixel_to_ray(self, bx, by, camera_pos, camera_rot, camera_intrinsic=None):
         """
         이미지 상의 픽셀 좌표를 3D 광선으로 변환합니다.
@@ -36,6 +42,10 @@ class DistCalculator:
             origin: 광선의 시작점 (카메라 위치)
             direction: 광선의 방향 벡터 (정규화됨)
         """
+
+        #if len(list(camera_rot)) != 3:
+        #    raise ValueError("입력 회전 벡터는 반드시 3개의 값 (roll, pitch, yaw)이 필요합니다.")
+
         # 카메라 내부 파라미터가 없는 경우 기본값 사용
         if camera_intrinsic is None:
             # 이미지 크기 512x512 기준으로 설정
@@ -55,6 +65,7 @@ class DistCalculator:
         ray_camera = normalized_coords / np.linalg.norm(normalized_coords)
 
         # 카메라 회전 행렬 계산 (yaw, pitch, roll를 회전 행렬로 변환)
+        camera_rot_rad = np.deg2rad(np.array(camera_rot) * -1) 
         rotation = R.from_euler('xyz', camera_rot)
         rotation_matrix = rotation.as_matrix()
 
@@ -63,7 +74,10 @@ class DistCalculator:
 
         # 정규화
         ray_direction = ray_direction / np.linalg.norm(ray_direction)
-
+        #axis_yaw = camera_pos[2]
+        #axis_roll = camera_pos[1]
+        #camera_pos[1] = axis_roll
+        #camera_pos[2] = axis_yaw
         return np.array(camera_pos), ray_direction
     
     def find_closest_point_between_rays(self, origin1, direction1, origin2, direction2):
@@ -109,12 +123,16 @@ class DistCalculator:
         point1 = origin1 + t1 * direction1
         point2 = origin2 + t2 * direction2
 
-        # 두 점 사이의 중간점을 최근접점으로 설정
+        # 두 점 사이의 중간점을 최근접점으로 설정 다시 unity좌표계로로
         midpoint = (point1 + point2) / 2
-
-            # 두 광선 사이의 최소 거리 계산
+        #axis_yaw = midpoint[2]
+        #axis_roll = midpoint[1]
+        #midpoint[1] = axis_yaw
+        #midpoint[2] = axis_roll
+        # 두 광선 사이의 최소 거리 계산
         distance = np.linalg.norm(point1 - point2)
-    
+
+
         return midpoint, distance
     
 
@@ -136,11 +154,11 @@ class DistCalculator:
             3D 좌표 (x, y, z)
         """
 
-        # 각 카메라에서 광선 계산
+        # 각 카메라에서 광선 계산 / 일반적인 좌표계로 변환된 좌표값
         origin_left, direction_left = self.pixel_to_ray(bx_left, by_left, stereoL_pos, stereoL_rot)
         origin_right, direction_right = self.pixel_to_ray(bx_right, by_right, stereoR_pos, stereoR_rot)
         
-        # 두 광선의 최근접점 계산
+        # 두 광선의 최근접점 계산 시뮬레이터상 좌표로 출력
         midpoint, distance = self.find_closest_point_between_rays(origin_left, direction_left, origin_right, direction_right)
 
         # 거리가 너무 크면 삼각측량 실패로 간주
@@ -151,18 +169,19 @@ class DistCalculator:
     
 
 class StereoPreprocess:
-    def __init__(self, left_dir, right_dir, log_path, camera_intrinsic=None):
+    def __init__(self, left_dir, right_dir, log_path, model_path, camera_intrinsic=None):
         self.left_dir = left_dir
         self.right_dir = right_dir
         self.log_path = log_path
-
+        self.model_path = model_path
         #필터링된 log_data, detection_dict -> Time 기준 정렬렬
-        filter = StereoImageFilter(left_dir, right_dir, log_path)
+        filter = StereoImageFilter(left_dir, right_dir, log_path, self.model_path)
         log_data, detection_left, detection_right = filter.get_result()
         log_data = log_data.sort_values(by='Time')
         self.log_data = log_data
         self.detection_left = detection_left
         self.detection_right = detection_right
+        print('detection left length:',len(detection_left))
 
         # 카메라 내부 파라미터가 없는 경우 기본값 사용
         if camera_intrinsic is None:
@@ -338,13 +357,12 @@ class StereoPreprocess:
         
         calc=DistCalculator()
         results = []
-        for index, row in log_data.iterrows():
+        for _, row in log_data.iterrows():
             left_pos = [row['StereoL_X'], row['StereoL_Y'], row['StereoL_Z']]
             left_rot = [row['StereoL_Roll'], row['StereoL_Pitch'], row['StereoL_Yaw']]
             right_pos = [row['StereoR_X'], row['StereoR_Y'], row['StereoR_Z']]
             right_rot = [row['StereoR_Roll'], row['StereoR_Pitch'], row['StereoR_Yaw']]
-    
-    
+
             midpoint = calc.compute_3d_position(
                 row['bx_left'], row['by_left'], row['bx_right'], row['by_right'],
                 left_pos, left_rot, right_pos, right_rot

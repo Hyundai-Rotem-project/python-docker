@@ -108,3 +108,6 @@ test_data/train/temp_labels/
 temp_*
 *.temp
 *.tmp
+
+#사진 파일
+*.png

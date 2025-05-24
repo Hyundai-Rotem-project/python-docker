@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import os
 import torch
 from ultralytics import YOLO
+import modules.turret as turret
 from modules.RealTimeInference import RealTimeInference
 # Initialize Flask server
 app = Flask(__name__)
@@ -53,8 +54,8 @@ def detect():
 
 
     Inference = RealTimeInference()
-    y_pred = Inference.log2pred(left_dir,right_dir,log_path)
-    print(y_pred)
+    y_pred, detect_coord = Inference.log2pred(left_dir,right_dir,log_path)
+    print(y_pred,'\n',detect_coord)
     return jsonify(filtered_results)
 
 

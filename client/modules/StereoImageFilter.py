@@ -12,7 +12,7 @@ class StereoImageFilter:
         self.log_data = pd.read_csv(self.log_path)
         self.model_path = model_path
         if model_path is None:
-            self.model_path = 'C:\\Users\\Dhan\\Desktop\\Project3\\best.pt'
+            self.model_path = 'best.pt'
         self.model = YOLO(self.model_path).to('cuda' if torch.cuda.is_available() else 'cpu')
         self.target_classes = {
             0: 'car2', 1: 'car3', 2: 'car5', 3: 'human', 4: 'rock',
